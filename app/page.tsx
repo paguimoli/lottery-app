@@ -168,6 +168,60 @@ const [selectedGameIndex, setSelectedGameIndex] = useState("");
   }, [games, gamesLoadedFromSupabase]);
 
   useEffect(() => {
+    if (!gamesLoadedFromSupabase) return;
+
+    async function syncNormalizedGamesToSupabase() {
+      const { error: deleteError } = await supabase
+        .from("normalized_games")
+        .delete()
+        .not("created_at", "is", null);
+
+      if (deleteError) {
+        console.error("Supabase normalized_games clear failed:", deleteError);
+        return;
+      }
+
+      if (games.length === 0) {
+        return;
+      }
+
+      const normalizedGames = games.map((game: any) => ({
+        state: game.state,
+        name: game.name,
+        status: game.status || "active",
+        game_type: game.gameType,
+        main_numbers_count: Number(game.mainNumbersCount || 0),
+        main_numbers_min: Number(game.mainNumbersMin || 0),
+        main_numbers_max: Number(game.mainNumbersMax || 0),
+        bonus_numbers_count: Number(game.bonusNumbersCount || 0),
+        bonus_numbers_min: Number(game.bonusNumbersMin || 0),
+        bonus_numbers_max: Number(game.bonusNumbersMax || 0),
+        ticket_price: Number(game.ticketPrice || 0),
+        payout_multiplier: Number(game.payoutMultiplier || 0),
+        max_payout: Number(game.maxPayout || 0),
+        default_max_bet: Number(game.defaultMaxBet || 0),
+        default_max_total_handle: Number(game.defaultMaxTotalHandle || 0),
+        default_max_total_liability: Number(game.defaultMaxTotalLiability || 0),
+        schedule_type: game.scheduleType,
+        recurring_frequency: game.recurringFrequency,
+        default_draw_time: game.defaultDrawTime,
+        default_cutoff_time: game.defaultCutoffTime,
+        default_time_zone: game.defaultTimeZone,
+      }));
+
+      const { error: insertError } = await supabase
+        .from("normalized_games")
+        .insert(normalizedGames);
+
+      if (insertError) {
+        console.error("Supabase normalized_games save failed:", insertError);
+      }
+    }
+
+    syncNormalizedGamesToSupabase();
+  }, [games, gamesLoadedFromSupabase]);
+
+  useEffect(() => {
     async function loadDrawingsFromSupabase() {
       const { data, error } = await supabase
         .from("drawings")
@@ -215,6 +269,115 @@ const [selectedGameIndex, setSelectedGameIndex] = useState("");
     }
 
     saveDrawingsToSupabase();
+  }, [drawings, drawingsLoadedFromSupabase]);
+
+  useEffect(() => {
+    if (!drawingsLoadedFromSupabase) return;
+
+    async function syncNormalizedDrawingsToSupabase() {
+      function isValidDateString(value: any) {
+        return typeof value === "string" && /^\d{4}-\d{2}-\d{2}$/.test(value);
+      }
+
+      const { error: deleteError } = await supabase
+        .from("normalized_drawings")
+        .delete()
+        .not("created_at", "is", null);
+
+      if (deleteError) {
+        console.error("Supabase normalized_drawings clear failed:", deleteError);
+        return;
+      }
+
+      if (drawings.length === 0) {
+        return;
+      }
+
+      const normalizedDrawings = drawings.map((drawing: any) => ({
+        external_id: drawing.id,
+        state: drawing.game?.state || "",
+        game_name: drawing.game?.name || "",
+        draw_date: isValidDateString(drawing.drawDate) ? drawing.drawDate : null,
+        draw_time: drawing.drawTime || "",
+        cutoff_time: drawing.cutoffTime || "",
+        time_zone: drawing.timeZone || "",
+        status: drawing.status || "scheduled",
+        max_bet: Number(drawing.maxBet || 0),
+        max_total_handle: Number(drawing.maxTotalHandle || 0),
+        max_total_liability: Number(drawing.maxTotalLiability || 0),
+        total_handle: Number(drawing.totalHandle || 0),
+        total_potential_payout: Number(drawing.totalPotentialPayout || 0),
+        worst_case_liability: Number(drawing.worstCaseLiability || 0),
+        house_position: Number(drawing.housePosition || 0),
+        winning_numbers: drawing.winningNumbers || "",
+        winning_bonus: drawing.winningBonus || "",
+        result_source: drawing.resultSource || "",
+        actual_payout: Number(drawing.actualPayout || 0),
+        override_reason: drawing.overrideReason || "",
+        settled_at: drawing.settledAt || null,
+        reopened_at: drawing.reopenedAt || null,
+      }));
+
+      const { error: insertError } = await supabase
+        .from("normalized_drawings")
+        .insert(normalizedDrawings);
+
+      if (insertError) {
+        console.error("Supabase normalized_drawings save failed:", JSON.stringify(insertError, null, 2));
+      }
+    }
+
+    syncNormalizedDrawingsToSupabase();
+  }, [drawings, drawingsLoadedFromSupabase]);
+
+  useEffect(() => {
+    if (!drawingsLoadedFromSupabase) return;
+
+    async function syncNormalizedBetsToSupabase() {
+      function isValidIsoDate(value: any) {
+        return typeof value === "string" && !Number.isNaN(Date.parse(value));
+      }
+
+      const { error: deleteError } = await supabase
+        .from("normalized_bets")
+        .delete()
+        .not("created_at", "is", null);
+
+      if (deleteError) {
+        console.error("Supabase normalized_bets clear failed:", deleteError);
+        return;
+      }
+
+      const normalizedBets = drawings.flatMap((drawing: any) =>
+        (drawing.bets || []).map((bet: any) => ({
+          external_id: String(bet.id || ""),
+          drawing_external_id: String(drawing.id || ""),
+          state: String(drawing.game?.state || ""),
+          game_name: String(drawing.game?.name || ""),
+          numbers: String(bet.numbers || ""),
+          bet_type: String(bet.betType || ""),
+          amount: Number(bet.amount || 0),
+          potential_payout: Number(bet.potentialPayout || 0),
+          status: String(bet.status || "accepted"),
+          placed_at: isValidIsoDate(bet.placedAt) ? bet.placedAt : null,
+          settled_at: isValidIsoDate(bet.settledAt) ? bet.settledAt : null,
+        }))
+      ).filter((bet: any) => bet.external_id !== "");
+
+      if (normalizedBets.length === 0) {
+        return;
+      }
+
+      const { error: insertError } = await supabase
+        .from("normalized_bets")
+        .insert(normalizedBets);
+
+      if (insertError) {
+        console.error("Supabase normalized_bets save failed:", JSON.stringify(insertError, null, 2));
+      }
+    }
+
+    syncNormalizedBetsToSupabase();
   }, [drawings, drawingsLoadedFromSupabase]);
 
 	  function handleChange(
@@ -1683,7 +1846,6 @@ function clearAllLocalData() {
 
   if (!confirmed) return;
 
-  localStorage.clear();
   setGames([]);
   setDrawings([]);
   setExpandedDrawingIds([]);
@@ -3433,12 +3595,12 @@ Export Risk Exposure </button>
 	            onClick={exportLocalDataJSON}
             className="rounded-md bg-slate-700 px-3 py-1.5 text-sm font-semibold text-white hover:bg-slate-800"
           >
-            Export Local Data JSON
+            Export Backup JSON
           </button>
 
           <label>
             <span className="inline-block cursor-pointer rounded-md bg-slate-700 px-3 py-1.5 text-sm font-semibold text-white hover:bg-slate-800">
-              Import Local Data JSON
+              Import Backup JSON
             </span>
             <input
               type="file"
@@ -3452,7 +3614,7 @@ Export Risk Exposure </button>
             onClick={clearAllLocalData}
             className="rounded-md bg-red-700 px-3 py-1.5 text-sm font-semibold text-white hover:bg-red-800"
           >
-            Clear All Local Data
+            Clear All Data
           </button>
 	          </div>
 	        </section>
