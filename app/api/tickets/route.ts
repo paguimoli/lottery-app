@@ -7,6 +7,10 @@ type TicketLeg = {
   numbers?: string;
   amount?: number;
   stakeMode?: string;
+  boxWayCount?: number;
+  spotCount?: number;
+  bullseyeEnabled?: boolean;
+  selectionMethod?: string;
 };
 
 type TicketRequestBody = {
@@ -140,7 +144,14 @@ export async function POST(request: Request) {
     });
   }
 
-  const legs = body.legs;
+  const legs = body.legs.map((leg) => ({
+    ...leg,
+    spotCount: leg.spotCount,
+    bullseyeEnabled: leg.bullseyeEnabled,
+    selectionMethod: leg.selectionMethod,
+    boxWayCount: leg.boxWayCount,
+    stakeMode: leg.stakeMode,
+  }));
   const totalAmount = legs.reduce(
     (sum, leg) => sum + Number(leg.amount || 0),
     0
