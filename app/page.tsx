@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { Fragment, type ReactNode, useEffect, useRef, useState } from "react";
 import { supabase } from "@/app/lib/supabaseClient";
 
 const states = [
@@ -47,6 +47,37 @@ function getExposureByNumbers(drawing: any) {
 }
 const DEFAULT_TIME_ZONE = "America/New_York";
 const MAX_VISIBLE_BETS = 25;
+const KENO_METRIC_KEYS = [
+  "drawSum",
+  "oddCount",
+  "evenCount",
+  "lowCount",
+  "highCount",
+  "firstHalfCount",
+  "secondHalfCount",
+  "dragonDigit",
+  "tigerDigit",
+  "dragonTigerResult",
+  "upDownResult",
+  "woodCount",
+  "fireCount",
+  "earthCount",
+  "metalCount",
+  "waterCount",
+];
+
+const COMPARISON_OPERATORS = [">", "<", ">=", "<=", "==", "!="] as const;
+
+type SettlementMethod =
+  | "hit_count"
+  | "hit_count_bullseye"
+  | "metric_comparison"
+  | "metric_threshold"
+  | "element_count"
+  | "dragon_tiger"
+  | "selection_match";
+
+type ComparisonOperator = (typeof COMPARISON_OPERATORS)[number];
 
 type PayTableRow = {
   id: string;
@@ -64,6 +95,355 @@ type PayTable = {
   effectiveDate: string;
   rows: PayTableRow[];
 };
+
+type KenoDrawMetrics = {
+  id: string;
+  drawingId: string;
+  gameId: string;
+  drawSum: number;
+  oddCount: number;
+  evenCount: number;
+  lowCount: number;
+  highCount: number;
+  firstHalfCount: number;
+  secondHalfCount: number;
+  minDrawnNumber: number;
+  maxDrawnNumber: number;
+  dragonDigit: number;
+  tigerDigit: number;
+  dragonTigerResult: "dragon" | "tiger" | "tie";
+  upDownResult: "up" | "down" | "tie";
+  bullseyeNumber?: number | null;
+  woodCount: number;
+  fireCount: number;
+  earthCount: number;
+  metalCount: number;
+  waterCount: number;
+  createdAt: string;
+};
+
+type WagerType = {
+  id: string;
+  gameId: string;
+  name: string;
+  code: string;
+  active: boolean;
+  settlementMethod: SettlementMethod;
+  metricKey?: string;
+  comparisonOperator?: ComparisonOperator;
+  thresholdValue?: number | null;
+  payTableId?: string | null;
+  createdAt: string;
+};
+
+type WagerOption = {
+  id: string;
+  wagerTypeId: string;
+  name: string;
+  code: string;
+  active: boolean;
+};
+
+type AdminPermission =
+  | "games.view"
+  | "games.manage"
+  | "draws.view"
+  | "draws.manage"
+  | "results.post"
+  | "results.correct"
+  | "draws.void"
+  | "paytables.view"
+  | "paytables.manage"
+  | "wagers.view"
+  | "wagers.manage"
+  | "players.view"
+  | "players.manage"
+  | "wallets.view"
+  | "wallets.adjust"
+  | "tickets.view"
+  | "tickets.manage"
+  | "settlement.view"
+  | "settlement.run"
+  | "settlement.resettle"
+  | "reports.view"
+  | "reports.export"
+  | "admin_users.view"
+  | "admin_users.manage"
+  | "audit.view"
+  | "risk.view"
+  | "risk.manage"
+  | "rng.view"
+  | "rng.manage"
+  | "pam.view"
+  | "pam.manage";
+
+type AdminRole = {
+  id: string;
+  name: string;
+  description: string;
+  permissions: AdminPermission[];
+  active: boolean;
+  createdAt: string;
+};
+
+type AdminUser = {
+  id: string;
+  name: string;
+  email: string;
+  roleIds: string[];
+  status: "active" | "suspended" | "inactive";
+  createdAt: string;
+};
+
+type Market = {
+  id: string;
+  name: string;
+  code: string;
+  language: string;
+  currency: string;
+  timeZone: string;
+  dateFormat: string;
+  numberFormat: string;
+  defaultBrand: string;
+  active: boolean;
+  createdAt: string;
+};
+
+type AccountType = "super_master" | "master_agent" | "agent" | "player";
+
+type AccountStatus = "active" | "suspended" | "inactive";
+
+type PlayerAccount = {
+  id: string;
+  accountType: AccountType;
+  parentId: string | null;
+  username: string;
+  displayName: string;
+  email?: string;
+  phone?: string;
+  marketId?: string | null;
+  language?: string;
+  currency?: string;
+  status: AccountStatus;
+  cashBalance: number;
+  creditLimit: number;
+  currentExposure: number;
+  availableCredit: number;
+  maxBet?: number;
+  maxPayout?: number;
+  notes?: string;
+  createdAt: string;
+};
+
+type LedgerCategory = "accounting" | "operational" | "freeplay";
+
+type TransactionType =
+  | "deposit"
+  | "withdrawal"
+  | "zero_balance_credit"
+  | "zero_balance_debit"
+  | "transfer_in"
+  | "transfer_out"
+  | "manual_adjustment"
+  | "win"
+  | "loss"
+  | "credit_adjustment"
+  | "debit_adjustment"
+  | "freeplay_win"
+  | "freeplay_grant"
+  | "freeplay_wager"
+  | "freeplay_expiration"
+  | "freeplay_adjustment"
+  | "freeplay_reversal"
+  | "reversal";
+
+type LedgerTransaction = {
+  id: string;
+  accountId: string;
+  category: LedgerCategory;
+  transactionType: TransactionType;
+  amount: number;
+  description: string;
+  referenceId?: string | null;
+  parentTransactionId?: string | null;
+  createdBy?: string | null;
+  createdAt: string;
+};
+
+type AccountFinancialSummary = {
+  accountId: string;
+  accountingBalance: number;
+  weeklyFigure: number;
+  freeplayBalance: number;
+  pendingExposure: number;
+  availableCredit: number;
+};
+
+type TicketStatus =
+  | "pending"
+  | "accepted"
+  | "settled"
+  | "void"
+  | "cancelled"
+  | "resettled";
+
+type TicketLineStatus =
+  | "pending"
+  | "won"
+  | "lost"
+  | "push"
+  | "void"
+  | "cancelled"
+  | "resettled";
+
+type TicketFundingType = "cash" | "credit" | "freeplay";
+
+type Ticket = {
+  id: string;
+  ticketNumber: string;
+  accountId: string;
+  marketId?: string | null;
+  gameId: string;
+  drawingId: string;
+  totalStake: number;
+  potentialPayout: number;
+  fundingType: TicketFundingType;
+  status: TicketStatus;
+  createdAt: string;
+  acceptedAt?: string | null;
+  settledAt?: string | null;
+  ledgerTransactionIds: string[];
+  notes?: string;
+};
+
+type TicketLine = {
+  id: string;
+  ticketId: string;
+  wagerTypeId: string;
+  wagerOptionId?: string | null;
+  selectedNumbers?: number[];
+  stake: number;
+  potentialPayout: number;
+  status: TicketLineStatus;
+  resultAmount?: number | null;
+  createdAt: string;
+};
+
+type SettlementRunStatus =
+  | "pending"
+  | "running"
+  | "completed"
+  | "failed"
+  | "reversed";
+
+type SettlementRecordStatus =
+  | "pending"
+  | "settled"
+  | "reversed"
+  | "failed"
+  | "void";
+
+type SettlementOutcome = "win" | "loss" | "push" | "void";
+
+type SettlementRun = {
+  id: string;
+  drawingId: string;
+  gameId: string;
+  status: SettlementRunStatus;
+  startedAt?: string | null;
+  completedAt?: string | null;
+  processedTicketCount: number;
+  processedLineCount: number;
+  totalStake: number;
+  totalPayout: number;
+  totalNet: number;
+  notes?: string;
+  createdAt: string;
+};
+
+type SettlementRecord = {
+  id: string;
+  settlementRunId: string;
+  ticketId: string;
+  ticketLineId: string;
+  accountId: string;
+  gameId: string;
+  drawingId: string;
+  wagerTypeId: string;
+  wagerOptionId?: string | null;
+  stake: number;
+  payout: number;
+  netAmount: number;
+  outcome: SettlementOutcome;
+  status: SettlementRecordStatus;
+  version: number;
+  previousSettlementRecordId?: string | null;
+  reversalOfSettlementRecordId?: string | null;
+  ledgerTransactionIds: string[];
+  createdAt: string;
+};
+
+const ADMIN_PERMISSION_GROUPS: Array<{
+  name: string;
+  permissions: AdminPermission[];
+}> = [
+  {
+    name: "Games & Draws",
+    permissions: ["games.view", "games.manage", "draws.view", "draws.manage"],
+  },
+  {
+    name: "Results",
+    permissions: ["results.post", "results.correct", "draws.void"],
+  },
+  {
+    name: "Pay Tables & Wagers",
+    permissions: [
+      "paytables.view",
+      "paytables.manage",
+      "wagers.view",
+      "wagers.manage",
+    ],
+  },
+  {
+    name: "Players & Wallets",
+    permissions: [
+      "players.view",
+      "players.manage",
+      "wallets.view",
+      "wallets.adjust",
+    ],
+  },
+  {
+    name: "Tickets & Settlement",
+    permissions: [
+      "tickets.view",
+      "tickets.manage",
+      "settlement.view",
+      "settlement.run",
+      "settlement.resettle",
+    ],
+  },
+  {
+    name: "Reports & Audit",
+    permissions: ["reports.view", "reports.export", "audit.view"],
+  },
+  {
+    name: "Risk",
+    permissions: ["risk.view", "risk.manage"],
+  },
+  {
+    name: "System Integrations",
+    permissions: ["rng.view", "rng.manage", "pam.view", "pam.manage"],
+  },
+  {
+    name: "Admin Management",
+    permissions: ["admin_users.view", "admin_users.manage"],
+  },
+];
+
+const ALL_ADMIN_PERMISSIONS = ADMIN_PERMISSION_GROUPS.flatMap(
+  (group) => group.permissions
+);
 
 
 export default function Home() {
@@ -95,7 +475,167 @@ export default function Home() {
   const [hotspotProfiles, setHotspotProfiles] = useState<any[]>([]);
   const [hotspotTiers, setHotspotTiers] = useState<any[]>([]);
   const [editingHotspotTierId, setEditingHotspotTierId] = useState<string | null>(null);
+  const [selectedKenoGameId, setSelectedKenoGameId] = useState("");
+  const [lastGeneratedKenoDraw, setLastGeneratedKenoDraw] = useState<any | null>(null);
+  const [kenoDrawMetrics, setKenoDrawMetrics] = useState<KenoDrawMetrics[]>([]);
+  const [wagerTypes, setWagerTypes] = useState<WagerType[]>([]);
+  const [editingWagerTypeId, setEditingWagerTypeId] = useState<string | null>(null);
+  const [wagerTypeForm, setWagerTypeForm] = useState({
+    gameId: "",
+    name: "",
+    code: "",
+    settlementMethod: "hit_count",
+    metricKey: "",
+    comparisonOperator: "",
+    thresholdValue: "",
+    payTableId: "",
+    active: true,
+  });
   const [payTables, setPayTables] = useState<PayTable[]>([]);
+  const [wagerOptions, setWagerOptions] = useState<WagerOption[]>([]);
+  const [editingWagerOptionId, setEditingWagerOptionId] = useState<string | null>(null);
+  const [wagerOptionForm, setWagerOptionForm] = useState({
+    wagerTypeId: "",
+    name: "",
+    code: "",
+    active: true,
+  });
+  const [adminRoles, setAdminRoles] = useState<AdminRole[]>([]);
+  const [editingAdminRoleId, setEditingAdminRoleId] = useState<string | null>(null);
+  const [adminRoleForm, setAdminRoleForm] = useState<{
+    name: string;
+    description: string;
+    permissions: AdminPermission[];
+    active: boolean;
+  }>({
+    name: "",
+    description: "",
+    permissions: [],
+    active: true,
+  });
+  const [adminUsers, setAdminUsers] = useState<AdminUser[]>([]);
+  const [editingAdminUserId, setEditingAdminUserId] = useState<string | null>(null);
+  const [adminUserForm, setAdminUserForm] = useState<{
+    name: string;
+    email: string;
+    roleIds: string[];
+    status: AdminUser["status"];
+  }>({
+    name: "",
+    email: "",
+    roleIds: [],
+    status: "active",
+  });
+  const [markets, setMarkets] = useState<Market[]>([]);
+  const [editingMarketId, setEditingMarketId] = useState<string | null>(null);
+  const [marketForm, setMarketForm] = useState({
+    name: "",
+    code: "",
+    language: "",
+    currency: "",
+    timeZone: "",
+    dateFormat: "",
+    numberFormat: "",
+    defaultBrand: "Default",
+    active: true,
+  });
+  const [playerAccounts, setPlayerAccounts] = useState<PlayerAccount[]>([]);
+  const [editingPlayerAccountId, setEditingPlayerAccountId] = useState<string | null>(null);
+  const [selectedAccountId, setSelectedAccountId] = useState<string | null>(null);
+  const [expandedNetworkAccountIds, setExpandedNetworkAccountIds] = useState<string[]>([]);
+  const [accountSearchTerm, setAccountSearchTerm] = useState("");
+  const [accountTreeFilter, setAccountTreeFilter] = useState("all");
+  const [accountPanelMode, setAccountPanelMode] = useState<
+    "create" | "edit" | "move" | null
+  >(null);
+  const [playerAccountForm, setPlayerAccountForm] = useState<{
+    accountType: AccountType;
+    parentId: string;
+    username: string;
+    displayName: string;
+    email: string;
+    phone: string;
+    marketId: string;
+    language: string;
+    currency: string;
+    status: AccountStatus;
+    cashBalance: string;
+    creditLimit: string;
+    currentExposure: string;
+    maxBet: string;
+    maxPayout: string;
+    notes: string;
+  }>({
+    accountType: "super_master",
+    parentId: "",
+    username: "",
+    displayName: "",
+    email: "",
+    phone: "",
+    marketId: "",
+    language: "",
+    currency: "USD",
+    status: "active",
+    cashBalance: "0",
+    creditLimit: "0",
+    currentExposure: "0",
+    maxBet: "",
+    maxPayout: "",
+    notes: "",
+  });
+  const [ledgerTransactions, setLedgerTransactions] = useState<LedgerTransaction[]>([]);
+  const [ledgerForm, setLedgerForm] = useState<{
+    accountId: string;
+    category: LedgerCategory;
+    transactionType: TransactionType;
+    amount: string;
+    description: string;
+    referenceId: string;
+    createdBy: string;
+  }>({
+    accountId: "",
+    category: "accounting",
+    transactionType: "deposit",
+    amount: "",
+    description: "",
+    referenceId: "",
+    createdBy: "",
+  });
+  const [tickets, setTickets] = useState<Ticket[]>([]);
+  const [ticketLines, setTicketLines] = useState<TicketLine[]>([]);
+  const [expandedTicketIds, setExpandedTicketIds] = useState<string[]>([]);
+  const [ticketForm, setTicketForm] = useState<{
+    accountId: string;
+    marketId: string;
+    gameId: string;
+    drawingId: string;
+    fundingType: TicketFundingType;
+    notes: string;
+  }>({
+    accountId: "",
+    marketId: "",
+    gameId: "",
+    drawingId: "",
+    fundingType: "cash",
+    notes: "",
+  });
+  const [ticketLineForm, setTicketLineForm] = useState({
+    wagerTypeId: "",
+    wagerOptionId: "",
+    selectedNumbers: "",
+    stake: "",
+    potentialPayout: "",
+  });
+  const [draftTicketLines, setDraftTicketLines] = useState<
+    Array<Omit<TicketLine, "id" | "ticketId" | "createdAt">>
+  >([]);
+  const [settlementRuns, setSettlementRuns] = useState<SettlementRun[]>([]);
+  const [settlementRecords, setSettlementRecords] = useState<SettlementRecord[]>([]);
+  const [expandedSettlementRunIds, setExpandedSettlementRunIds] = useState<string[]>([]);
+  const [settlementForm, setSettlementForm] = useState({
+    drawingId: "",
+    notes: "",
+  });
   const [payTableForm, setPayTableForm] = useState({
     gameId: "",
     name: "",
@@ -261,6 +801,22 @@ const [selectedGameIndex, setSelectedGameIndex] = useState("");
 	        return;
 	      }
 
+	      function normalizeSpotCounts(value: any) {
+	        const rawValues = Array.isArray(value)
+	          ? value
+	          : typeof value === "string"
+	            ? value.split(",")
+	            : [];
+
+	        const normalizedValues = rawValues
+	          .map((spot: any) => Number(String(spot).trim()))
+	          .filter((spot: number) => Number.isInteger(spot) && spot > 0);
+
+	        return normalizedValues.length > 0
+	          ? normalizedValues
+	          : [1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
+	      }
+
 	      const normalizedGames = games.map((game: any) => ({
 	        external_id:
 	          game.externalId ||
@@ -294,9 +850,9 @@ const [selectedGameIndex, setSelectedGameIndex] = useState("");
           game.numberRangeMax || game.numberPoolMax || game.mainNumbersMax || 80
         ),
         draw_count: Number(game.numbersDrawn || game.drawCount || 20),
-        allowed_spot_counts:
-          game.availableSpots ||
-          game.allowedSpotCounts || [1, 2, 3, 4, 5, 6, 7, 8, 9, 10],
+        allowed_spot_counts: normalizeSpotCounts(
+          game.availableSpots || game.allowedSpotCounts
+        ),
         bullseye_enabled: Boolean(game.bullseyeEnabled || false),
         ticket_price: Number(game.ticketPrice || 0),
         payout_multiplier: Number(game.payoutMultiplier || 0),
@@ -326,7 +882,21 @@ const [selectedGameIndex, setSelectedGameIndex] = useState("");
 	        });
 
       if (insertError) {
-        console.error("Supabase normalized_games save failed:", insertError);
+        console.error(
+          "Supabase normalized_games save failed:",
+          JSON.stringify(
+            {
+              message: insertError?.message,
+              details: insertError?.details,
+              hint: insertError?.hint,
+              code: insertError?.code,
+              rawError: insertError,
+              payload: normalizedGames,
+            },
+            null,
+            2
+          )
+        );
       }
     }
 
@@ -868,6 +1438,2496 @@ const [selectedGameIndex, setSelectedGameIndex] = useState("");
     resetPayTableForm();
   }
 
+  function resetWagerTypeForm() {
+    setEditingWagerTypeId(null);
+    setWagerTypeForm({
+      gameId: "",
+      name: "",
+      code: "",
+      settlementMethod: "hit_count",
+      metricKey: "",
+      comparisonOperator: "",
+      thresholdValue: "",
+      payTableId: "",
+      active: true,
+    });
+  }
+
+  function resetWagerOptionForm() {
+    setEditingWagerOptionId(null);
+    setWagerOptionForm({
+      wagerTypeId: "",
+      name: "",
+      code: "",
+      active: true,
+    });
+  }
+
+  function methodNeedsMetricKey(method: string) {
+    return (
+      method === "metric_comparison" ||
+      method === "metric_threshold" ||
+      method === "element_count"
+    );
+  }
+
+  function methodNeedsOperator(method: string) {
+    return method === "metric_comparison" || method === "metric_threshold";
+  }
+
+  function methodNeedsThreshold(method: string) {
+    return method === "metric_threshold";
+  }
+
+  function methodUsesPayTable(method: string) {
+    return method === "hit_count" || method === "hit_count_bullseye";
+  }
+
+  function getPayTablesForGame(gameId: string) {
+    return payTables.filter((payTable) => payTable.gameId === gameId);
+  }
+
+  function getOptionsForWagerType(wagerTypeId: string) {
+    return wagerOptions.filter((option) => option.wagerTypeId === wagerTypeId);
+  }
+
+  function editWagerType(wagerType: WagerType) {
+    setEditingWagerTypeId(wagerType.id);
+    setWagerTypeForm({
+      gameId: wagerType.gameId,
+      name: wagerType.name,
+      code: wagerType.code,
+      settlementMethod: wagerType.settlementMethod,
+      metricKey: wagerType.metricKey || "",
+      comparisonOperator: wagerType.comparisonOperator || "",
+      thresholdValue:
+        wagerType.thresholdValue === null || wagerType.thresholdValue === undefined
+          ? ""
+          : String(wagerType.thresholdValue),
+      payTableId: wagerType.payTableId || "",
+      active: wagerType.active,
+    });
+  }
+
+  function saveWagerType(event: React.FormEvent) {
+    event.preventDefault();
+
+    const settlementMethod = wagerTypeForm.settlementMethod as SettlementMethod;
+    const code = wagerTypeForm.code.trim().toLowerCase().replace(/\s+/g, "_");
+
+    if (!wagerTypeForm.gameId || !wagerTypeForm.name.trim() || !code || !settlementMethod) {
+      alert("Please select a game, name the wager type, enter a code, and choose a settlement method.");
+      return;
+    }
+
+    if (
+      wagerTypes.some(
+        (wagerType) =>
+          wagerType.id !== editingWagerTypeId &&
+          wagerType.gameId === wagerTypeForm.gameId &&
+          wagerType.code === code
+      )
+    ) {
+      alert("A wager type with this code already exists for this game.");
+      return;
+    }
+
+    if (methodNeedsMetricKey(settlementMethod) && !wagerTypeForm.metricKey) {
+      alert("Please select a metric key for this settlement method.");
+      return;
+    }
+
+    if (methodNeedsOperator(settlementMethod) && !wagerTypeForm.comparisonOperator) {
+      alert("Please select a comparison operator for this settlement method.");
+      return;
+    }
+
+    if (
+      methodNeedsOperator(settlementMethod) &&
+      !COMPARISON_OPERATORS.includes(
+        wagerTypeForm.comparisonOperator as ComparisonOperator
+      )
+    ) {
+      alert("Please select a valid comparison operator for this settlement method.");
+      return;
+    }
+
+    if (
+      methodNeedsThreshold(settlementMethod) &&
+      wagerTypeForm.thresholdValue === ""
+    ) {
+      alert("Please enter a threshold value for this settlement method.");
+      return;
+    }
+
+    const existingWagerType = wagerTypes.find(
+      (wagerType) => wagerType.id === editingWagerTypeId
+    );
+    const nextWagerType: WagerType = {
+      id: existingWagerType?.id || `WAGER-${Date.now()}`,
+      gameId: wagerTypeForm.gameId,
+      name: wagerTypeForm.name.trim(),
+      code,
+      active: wagerTypeForm.active,
+      settlementMethod,
+      metricKey: methodNeedsMetricKey(settlementMethod)
+        ? wagerTypeForm.metricKey
+        : undefined,
+      comparisonOperator: methodNeedsOperator(settlementMethod)
+        ? (wagerTypeForm.comparisonOperator as ComparisonOperator)
+        : undefined,
+      thresholdValue: methodNeedsThreshold(settlementMethod)
+        ? Number(wagerTypeForm.thresholdValue)
+        : null,
+      payTableId: methodUsesPayTable(settlementMethod)
+        ? wagerTypeForm.payTableId || null
+        : null,
+      createdAt: existingWagerType?.createdAt || new Date().toISOString(),
+    };
+
+    if (editingWagerTypeId) {
+      setWagerTypes(
+        wagerTypes.map((wagerType) =>
+          wagerType.id === editingWagerTypeId ? nextWagerType : wagerType
+        )
+      );
+    } else {
+      setWagerTypes([...wagerTypes, nextWagerType]);
+    }
+
+    resetWagerTypeForm();
+  }
+
+  function deleteWagerType(wagerTypeId: string) {
+    if (!window.confirm("Delete this wager type? This cannot be undone.")) {
+      return;
+    }
+
+    setWagerTypes(wagerTypes.filter((wagerType) => wagerType.id !== wagerTypeId));
+    setWagerOptions(
+      wagerOptions.filter((option) => option.wagerTypeId !== wagerTypeId)
+    );
+
+    if (editingWagerTypeId === wagerTypeId) {
+      resetWagerTypeForm();
+    }
+
+    if (wagerOptionForm.wagerTypeId === wagerTypeId) {
+      resetWagerOptionForm();
+    }
+  }
+
+  function editWagerOption(option: WagerOption) {
+    setEditingWagerOptionId(option.id);
+    setWagerOptionForm({
+      wagerTypeId: option.wagerTypeId,
+      name: option.name,
+      code: option.code,
+      active: option.active,
+    });
+  }
+
+  function saveWagerOption(event: React.FormEvent) {
+    event.preventDefault();
+
+    const code = wagerOptionForm.code.trim().toLowerCase().replace(/\s+/g, "_");
+
+    if (!wagerOptionForm.wagerTypeId || !wagerOptionForm.name.trim() || !code) {
+      alert("Please select a wager type, name the option, and enter a code.");
+      return;
+    }
+
+    if (
+      wagerOptions.some(
+        (option) =>
+          option.id !== editingWagerOptionId &&
+          option.wagerTypeId === wagerOptionForm.wagerTypeId &&
+          option.code === code
+      )
+    ) {
+      alert("An option with this code already exists for this wager type.");
+      return;
+    }
+
+    const existingOption = wagerOptions.find(
+      (option) => option.id === editingWagerOptionId
+    );
+    const nextOption: WagerOption = {
+      id: existingOption?.id || `OPTION-${Date.now()}`,
+      wagerTypeId: wagerOptionForm.wagerTypeId,
+      name: wagerOptionForm.name.trim(),
+      code,
+      active: wagerOptionForm.active,
+    };
+
+    if (editingWagerOptionId) {
+      setWagerOptions(
+        wagerOptions.map((option) =>
+          option.id === editingWagerOptionId ? nextOption : option
+        )
+      );
+    } else {
+      setWagerOptions([...wagerOptions, nextOption]);
+    }
+
+    resetWagerOptionForm();
+  }
+
+  function deleteWagerOption(optionId: string) {
+    if (!window.confirm("Delete this wager option? This cannot be undone.")) {
+      return;
+    }
+
+    setWagerOptions(wagerOptions.filter((option) => option.id !== optionId));
+
+    if (editingWagerOptionId === optionId) {
+      resetWagerOptionForm();
+    }
+  }
+
+  function resetAdminRoleForm() {
+    setEditingAdminRoleId(null);
+    setAdminRoleForm({
+      name: "",
+      description: "",
+      permissions: [],
+      active: true,
+    });
+  }
+
+  function resetAdminUserForm() {
+    setEditingAdminUserId(null);
+    setAdminUserForm({
+      name: "",
+      email: "",
+      roleIds: [],
+      status: "active",
+    });
+  }
+
+  function toggleAdminRolePermission(permission: AdminPermission) {
+    setAdminRoleForm((currentForm) => ({
+      ...currentForm,
+      permissions: currentForm.permissions.includes(permission)
+        ? currentForm.permissions.filter(
+            (currentPermission) => currentPermission !== permission
+          )
+        : [...currentForm.permissions, permission],
+    }));
+  }
+
+  function editAdminRole(role: AdminRole) {
+    setEditingAdminRoleId(role.id);
+    setAdminRoleForm({
+      name: role.name,
+      description: role.description,
+      permissions: [...role.permissions],
+      active: role.active,
+    });
+  }
+
+  function saveAdminRole(event: React.FormEvent) {
+    event.preventDefault();
+
+    const name = adminRoleForm.name.trim();
+
+    if (!name) {
+      alert("Please enter a role name.");
+      return;
+    }
+
+    if (adminRoleForm.permissions.length === 0) {
+      alert("Please select at least one permission.");
+      return;
+    }
+
+    if (
+      adminRoles.some(
+        (role) =>
+          role.id !== editingAdminRoleId &&
+          role.name.trim().toLowerCase() === name.toLowerCase()
+      )
+    ) {
+      alert("An admin role with this name already exists.");
+      return;
+    }
+
+    const existingRole = adminRoles.find((role) => role.id === editingAdminRoleId);
+    const nextRole: AdminRole = {
+      id: existingRole?.id || `ROLE-${Date.now()}`,
+      name,
+      description: adminRoleForm.description.trim(),
+      permissions: adminRoleForm.permissions,
+      active: adminRoleForm.active,
+      createdAt: existingRole?.createdAt || new Date().toISOString(),
+    };
+
+    if (editingAdminRoleId) {
+      setAdminRoles(
+        adminRoles.map((role) =>
+          role.id === editingAdminRoleId ? nextRole : role
+        )
+      );
+    } else {
+      setAdminRoles([...adminRoles, nextRole]);
+    }
+
+    resetAdminRoleForm();
+  }
+
+  function deleteAdminRole(roleId: string) {
+    if (!window.confirm("Delete this admin role? This cannot be undone.")) {
+      return;
+    }
+
+    setAdminRoles(adminRoles.filter((role) => role.id !== roleId));
+    setAdminUsers(
+      adminUsers.map((user) => ({
+        ...user,
+        roleIds: user.roleIds.filter((userRoleId) => userRoleId !== roleId),
+      }))
+    );
+
+    if (editingAdminRoleId === roleId) {
+      resetAdminRoleForm();
+    }
+
+    if (adminUserForm.roleIds.includes(roleId)) {
+      setAdminUserForm({
+        ...adminUserForm,
+        roleIds: adminUserForm.roleIds.filter(
+          (userRoleId) => userRoleId !== roleId
+        ),
+      });
+    }
+  }
+
+  function addDefaultAdminRoles() {
+    const defaultRoles: Array<
+      Omit<AdminRole, "id" | "active" | "createdAt">
+    > = [
+      {
+        name: "Super Admin",
+        description: "Full platform access for all admin configuration.",
+        permissions: ALL_ADMIN_PERMISSIONS,
+      },
+      {
+        name: "Operations Manager",
+        description: "Runs daily games, draws, results, settlement, and audit review.",
+        permissions: [
+          "games.view",
+          "draws.view",
+          "draws.manage",
+          "results.post",
+          "results.correct",
+          "paytables.view",
+          "wagers.view",
+          "tickets.view",
+          "settlement.view",
+          "settlement.run",
+          "reports.view",
+          "audit.view",
+        ],
+      },
+      {
+        name: "Risk Manager",
+        description: "Reviews exposure, risk, reports, and settlement status.",
+        permissions: [
+          "games.view",
+          "draws.view",
+          "tickets.view",
+          "settlement.view",
+          "reports.view",
+          "reports.export",
+          "risk.view",
+          "risk.manage",
+          "audit.view",
+        ],
+      },
+      {
+        name: "Finance Manager",
+        description: "Manages wallet adjustments, settlement review, and finance reporting.",
+        permissions: [
+          "players.view",
+          "wallets.view",
+          "wallets.adjust",
+          "tickets.view",
+          "settlement.view",
+          "settlement.resettle",
+          "reports.view",
+          "reports.export",
+          "audit.view",
+        ],
+      },
+      {
+        name: "Read Only Auditor",
+        description: "Read-only visibility for audit and operational review.",
+        permissions: [
+          "games.view",
+          "draws.view",
+          "paytables.view",
+          "wagers.view",
+          "players.view",
+          "wallets.view",
+          "tickets.view",
+          "settlement.view",
+          "reports.view",
+          "audit.view",
+        ],
+      },
+    ];
+    const existingNames = new Set(
+      adminRoles.map((role) => role.name.trim().toLowerCase())
+    );
+    const createdAt = new Date().toISOString();
+    const idSeed = Date.now();
+    const newRoles = defaultRoles
+      .filter((role) => !existingNames.has(role.name.toLowerCase()))
+      .map((role, index) => ({
+        id: `ROLE-${idSeed}-${index}`,
+        active: true,
+        createdAt,
+        ...role,
+      }));
+
+    if (newRoles.length === 0) {
+      alert("Default admin roles already exist.");
+      return;
+    }
+
+    setAdminRoles([...adminRoles, ...newRoles]);
+  }
+
+  function toggleAdminUserRole(roleId: string) {
+    setAdminUserForm((currentForm) => ({
+      ...currentForm,
+      roleIds: currentForm.roleIds.includes(roleId)
+        ? currentForm.roleIds.filter((currentRoleId) => currentRoleId !== roleId)
+        : [...currentForm.roleIds, roleId],
+    }));
+  }
+
+  function editAdminUser(user: AdminUser) {
+    setEditingAdminUserId(user.id);
+    setAdminUserForm({
+      name: user.name,
+      email: user.email,
+      roleIds: [...user.roleIds],
+      status: user.status,
+    });
+  }
+
+  function saveAdminUser(event: React.FormEvent) {
+    event.preventDefault();
+
+    const name = adminUserForm.name.trim();
+    const email = adminUserForm.email.trim().toLowerCase();
+    const emailPattern = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+    if (!name) {
+      alert("Please enter an admin user name.");
+      return;
+    }
+
+    if (!email || !emailPattern.test(email)) {
+      alert("Please enter a valid admin user email.");
+      return;
+    }
+
+    if (adminUserForm.roleIds.length === 0) {
+      alert("Please assign at least one admin role.");
+      return;
+    }
+
+    if (
+      adminUsers.some(
+        (user) =>
+          user.id !== editingAdminUserId &&
+          user.email.trim().toLowerCase() === email
+      )
+    ) {
+      alert("An admin user with this email already exists.");
+      return;
+    }
+
+    const existingUser = adminUsers.find(
+      (user) => user.id === editingAdminUserId
+    );
+    const nextUser: AdminUser = {
+      id: existingUser?.id || `ADMIN-${Date.now()}`,
+      name,
+      email,
+      roleIds: adminUserForm.roleIds,
+      status: adminUserForm.status,
+      createdAt: existingUser?.createdAt || new Date().toISOString(),
+    };
+
+    if (editingAdminUserId) {
+      setAdminUsers(
+        adminUsers.map((user) =>
+          user.id === editingAdminUserId ? nextUser : user
+        )
+      );
+    } else {
+      setAdminUsers([...adminUsers, nextUser]);
+    }
+
+    resetAdminUserForm();
+  }
+
+  function deleteAdminUser(userId: string) {
+    if (!window.confirm("Delete this admin user? This cannot be undone.")) {
+      return;
+    }
+
+    setAdminUsers(adminUsers.filter((user) => user.id !== userId));
+
+    if (editingAdminUserId === userId) {
+      resetAdminUserForm();
+    }
+  }
+
+  function resetMarketForm() {
+    setEditingMarketId(null);
+    setMarketForm({
+      name: "",
+      code: "",
+      language: "",
+      currency: "",
+      timeZone: "",
+      dateFormat: "",
+      numberFormat: "",
+      defaultBrand: "Default",
+      active: true,
+    });
+  }
+
+  function editMarket(market: Market) {
+    setEditingMarketId(market.id);
+    setMarketForm({
+      name: market.name,
+      code: market.code,
+      language: market.language,
+      currency: market.currency,
+      timeZone: market.timeZone,
+      dateFormat: market.dateFormat,
+      numberFormat: market.numberFormat,
+      defaultBrand: market.defaultBrand,
+      active: market.active,
+    });
+  }
+
+  function saveMarket(event: React.FormEvent) {
+    event.preventDefault();
+
+    const name = marketForm.name.trim();
+    const code = marketForm.code.trim().toUpperCase();
+    const language = marketForm.language.trim();
+    const currency = marketForm.currency.trim().toUpperCase();
+    const timeZone = marketForm.timeZone.trim();
+
+    if (!name || !code || !language || !currency || !timeZone) {
+      alert("Please enter market name, code, language, currency, and time zone.");
+      return;
+    }
+
+    if (
+      markets.some(
+        (market) =>
+          market.id !== editingMarketId &&
+          market.code.trim().toUpperCase() === code
+      )
+    ) {
+      alert("A market with this code already exists.");
+      return;
+    }
+
+    const existingMarket = markets.find((market) => market.id === editingMarketId);
+    const nextMarket: Market = {
+      id: existingMarket?.id || `MARKET-${Date.now()}`,
+      name,
+      code,
+      language,
+      currency,
+      timeZone,
+      dateFormat: marketForm.dateFormat.trim(),
+      numberFormat: marketForm.numberFormat.trim(),
+      defaultBrand: marketForm.defaultBrand.trim() || "Default",
+      active: marketForm.active,
+      createdAt: existingMarket?.createdAt || new Date().toISOString(),
+    };
+
+    if (editingMarketId) {
+      setMarkets(
+        markets.map((market) =>
+          market.id === editingMarketId ? nextMarket : market
+        )
+      );
+    } else {
+      setMarkets([...markets, nextMarket]);
+    }
+
+    resetMarketForm();
+  }
+
+  function deleteMarket(marketId: string) {
+    if (!window.confirm("Delete this market? This cannot be undone.")) {
+      return;
+    }
+
+    setMarkets(markets.filter((market) => market.id !== marketId));
+
+    if (editingMarketId === marketId) {
+      resetMarketForm();
+    }
+  }
+
+  function addDefaultMarkets() {
+    const defaultMarkets: Array<Omit<Market, "id" | "active" | "createdAt">> = [
+      {
+        name: "Costa Rica",
+        code: "CR",
+        language: "es",
+        currency: "USD",
+        timeZone: "America/Costa_Rica",
+        dateFormat: "DD/MM/YYYY",
+        numberFormat: "es-CR",
+        defaultBrand: "Default",
+      },
+      {
+        name: "English International",
+        code: "EN-INT",
+        language: "en",
+        currency: "USD",
+        timeZone: "America/New_York",
+        dateFormat: "MM/DD/YYYY",
+        numberFormat: "en-US",
+        defaultBrand: "Default",
+      },
+      {
+        name: "Spanish International",
+        code: "ES-INT",
+        language: "es",
+        currency: "USD",
+        timeZone: "America/Panama",
+        dateFormat: "DD/MM/YYYY",
+        numberFormat: "es-419",
+        defaultBrand: "Default",
+      },
+      {
+        name: "Vietnam",
+        code: "VN",
+        language: "vi",
+        currency: "VND",
+        timeZone: "Asia/Ho_Chi_Minh",
+        dateFormat: "DD/MM/YYYY",
+        numberFormat: "vi-VN",
+        defaultBrand: "Default",
+      },
+    ];
+    const existingCodes = new Set(
+      markets.map((market) => market.code.trim().toUpperCase())
+    );
+    const createdAt = new Date().toISOString();
+    const idSeed = Date.now();
+    const newMarkets = defaultMarkets
+      .filter((market) => !existingCodes.has(market.code))
+      .map((market, index) => ({
+        id: `MARKET-${idSeed}-${index}`,
+        active: true,
+        createdAt,
+        ...market,
+      }));
+
+    if (newMarkets.length === 0) {
+      alert("Default markets already exist.");
+      return;
+    }
+
+    setMarkets([...markets, ...newMarkets]);
+  }
+
+  function resetPlayerAccountForm() {
+    setEditingPlayerAccountId(null);
+    setAccountPanelMode(null);
+    setPlayerAccountForm({
+      accountType: "super_master",
+      parentId: "",
+      username: "",
+      displayName: "",
+      email: "",
+      phone: "",
+      marketId: "",
+      language: "",
+      currency: "USD",
+      status: "active",
+      cashBalance: "0",
+      creditLimit: "0",
+      currentExposure: "0",
+      maxBet: "",
+      maxPayout: "",
+      notes: "",
+    });
+  }
+
+  function getParentOptionsForAccountType(accountType: AccountType) {
+    if (accountType === "master_agent") {
+      return playerAccounts.filter(
+        (account) =>
+          (account.accountType === "super_master" ||
+            account.accountType === "master_agent") &&
+          account.id !== editingPlayerAccountId &&
+          !wouldCreateHierarchyCycle(editingPlayerAccountId || "", account.id)
+      );
+    }
+
+    if (accountType === "agent") {
+      return playerAccounts.filter(
+        (account) =>
+          account.accountType === "master_agent" &&
+          account.id !== editingPlayerAccountId &&
+          !wouldCreateHierarchyCycle(editingPlayerAccountId || "", account.id)
+      );
+    }
+
+    if (accountType === "player") {
+      return playerAccounts.filter(
+        (account) =>
+          account.accountType === "agent" && account.id !== editingPlayerAccountId
+      );
+    }
+
+    return [];
+  }
+
+  function getChildAccounts(accountId: string) {
+    return playerAccounts.filter((account) => account.parentId === accountId);
+  }
+
+  function getParentAccount(accountId: string) {
+    const account = playerAccounts.find(
+      (createdAccount) => createdAccount.id === accountId
+    );
+
+    if (!account?.parentId) {
+      return null;
+    }
+
+    return (
+      playerAccounts.find(
+        (createdAccount) => createdAccount.id === account.parentId
+      ) || null
+    );
+  }
+
+  function getDescendantAccountIds(accountId: string) {
+    const descendantIds: string[] = [];
+    const collectDescendants = (parentId: string) => {
+      getChildAccounts(parentId).forEach((childAccount) => {
+        descendantIds.push(childAccount.id);
+        collectDescendants(childAccount.id);
+      });
+    };
+
+    collectDescendants(accountId);
+    return descendantIds;
+  }
+
+  function wouldCreateHierarchyCycle(accountId: string, newParentId: string | null) {
+    if (!accountId || !newParentId) {
+      return false;
+    }
+
+    if (accountId === newParentId) {
+      return true;
+    }
+
+    return getDescendantAccountIds(accountId).includes(newParentId);
+  }
+
+  function getAccountDisplayName(accountId: string | null) {
+    if (!accountId) {
+      return "";
+    }
+
+    const account = playerAccounts.find(
+      (createdAccount) => createdAccount.id === accountId
+    );
+
+    return account ? `${account.displayName} (${account.username})` : accountId;
+  }
+
+  function getSelectedAccount() {
+    return (
+      playerAccounts.find((account) => account.id === selectedAccountId) || null
+    );
+  }
+
+  function getRootNetworkAccounts() {
+    return playerAccounts.filter(
+      (account) => account.accountType === "super_master" || !account.parentId
+    );
+  }
+
+  function editPlayerAccount(account: PlayerAccount) {
+    setEditingPlayerAccountId(account.id);
+    setPlayerAccountForm({
+      accountType: account.accountType,
+      parentId: account.parentId || "",
+      username: account.username,
+      displayName: account.displayName,
+      email: account.email || "",
+      phone: account.phone || "",
+      marketId: account.marketId || "",
+      language: account.language || "",
+      currency: account.currency || "USD",
+      status: account.status,
+      cashBalance: String(account.cashBalance),
+      creditLimit: String(account.creditLimit),
+      currentExposure: String(account.currentExposure),
+      maxBet:
+        account.maxBet === null || account.maxBet === undefined
+          ? ""
+          : String(account.maxBet),
+      maxPayout:
+        account.maxPayout === null || account.maxPayout === undefined
+          ? ""
+          : String(account.maxPayout),
+      notes: account.notes || "",
+    });
+  }
+
+  function savePlayerAccount(event: React.FormEvent) {
+    event.preventDefault();
+
+    const username = playerAccountForm.username.trim();
+    const displayName = playerAccountForm.displayName.trim();
+    const cashBalance = Number(playerAccountForm.cashBalance || 0);
+    const creditLimit = Number(playerAccountForm.creditLimit || 0);
+    const currentExposure = Number(playerAccountForm.currentExposure || 0);
+    const maxBet =
+      playerAccountForm.maxBet === ""
+        ? undefined
+        : Number(playerAccountForm.maxBet);
+    const maxPayout =
+      playerAccountForm.maxPayout === ""
+        ? undefined
+        : Number(playerAccountForm.maxPayout);
+
+    if (!playerAccountForm.accountType || !username || !displayName || !playerAccountForm.status) {
+      alert("Please enter account type, username, display name, and status.");
+      return;
+    }
+
+    if (
+      playerAccounts.some(
+        (account) =>
+          account.id !== editingPlayerAccountId &&
+          account.username.trim().toLowerCase() === username.toLowerCase()
+      )
+    ) {
+      alert("An account with this username already exists.");
+      return;
+    }
+
+    if (
+      Number.isNaN(cashBalance) ||
+      Number.isNaN(creditLimit) ||
+      Number.isNaN(currentExposure) ||
+      Number.isNaN(maxBet ?? 0) ||
+      Number.isNaN(maxPayout ?? 0)
+    ) {
+      alert("Cash, credit, exposure, max bet, and max payout values must be numeric.");
+      return;
+    }
+
+    if (playerAccountForm.accountType === "super_master" && playerAccountForm.parentId) {
+      alert("Super master accounts cannot have a parent account.");
+      return;
+    }
+
+    if (
+      editingPlayerAccountId &&
+      playerAccountForm.parentId === editingPlayerAccountId
+    ) {
+      alert("An account cannot be assigned as its own parent.");
+      return;
+    }
+
+    if (
+      editingPlayerAccountId &&
+      wouldCreateHierarchyCycle(
+        editingPlayerAccountId,
+        playerAccountForm.parentId || null
+      )
+    ) {
+      alert("This parent assignment would create a hierarchy cycle.");
+      return;
+    }
+
+    const existingAccount = playerAccounts.find(
+      (account) => account.id === editingPlayerAccountId
+    );
+    const hasChildAccounts =
+      !!existingAccount &&
+      playerAccounts.some((account) => account.parentId === existingAccount.id);
+
+    if (
+      hasChildAccounts &&
+      existingAccount?.accountType === "super_master" &&
+      playerAccountForm.accountType !== "super_master"
+    ) {
+      alert("Cannot change a super master type while it has downline accounts.");
+      return;
+    }
+
+    if (
+      hasChildAccounts &&
+      existingAccount?.accountType === "master_agent" &&
+      playerAccountForm.accountType !== "master_agent"
+    ) {
+      alert("Cannot change a master agent type while it has downline accounts.");
+      return;
+    }
+
+    if (
+      hasChildAccounts &&
+      existingAccount?.accountType === "agent" &&
+      playerAccountForm.accountType !== "agent"
+    ) {
+      alert("Cannot change an agent type while it has players.");
+      return;
+    }
+
+    if (playerAccountForm.accountType === "master_agent") {
+      const parentAccount = playerAccounts.find(
+        (account) => account.id === playerAccountForm.parentId
+      );
+
+      if (
+        !parentAccount ||
+        !["super_master", "master_agent"].includes(parentAccount.accountType)
+      ) {
+        alert("Master agents must be assigned to a super master or master agent.");
+        return;
+      }
+    }
+
+    if (playerAccountForm.accountType === "agent") {
+      const parentAccount = playerAccounts.find(
+        (account) => account.id === playerAccountForm.parentId
+      );
+
+      if (!parentAccount || parentAccount.accountType !== "master_agent") {
+        alert("Agents must be assigned to a master agent.");
+        return;
+      }
+    }
+
+    if (playerAccountForm.accountType === "player") {
+      const parentAccount = playerAccounts.find(
+        (account) => account.id === playerAccountForm.parentId
+      );
+
+      if (!parentAccount || parentAccount.accountType !== "agent") {
+        alert("Players must be assigned to an agent.");
+        return;
+      }
+    }
+
+    const selectedMarket = markets.find(
+      (market) => market.id === playerAccountForm.marketId
+    );
+    // Production backend must write audit log for hierarchy moves including oldParentId, newParentId, changedBy, reason, and timestamp.
+    // Future backend queries must filter by downline: super master sees all, master agent sees descendants, agent sees own players, player sees own account.
+    const nextAccount: PlayerAccount = {
+      id: existingAccount?.id || `ACCOUNT-${Date.now()}`,
+      accountType: playerAccountForm.accountType,
+      parentId:
+        playerAccountForm.accountType === "super_master"
+          ? null
+          : playerAccountForm.parentId,
+      username,
+      displayName,
+      email: playerAccountForm.email.trim(),
+      phone: playerAccountForm.phone.trim(),
+      marketId: playerAccountForm.marketId || null,
+      language: playerAccountForm.language.trim() || selectedMarket?.language || "",
+      currency: playerAccountForm.currency.trim() || selectedMarket?.currency || "USD",
+      status: playerAccountForm.status,
+      cashBalance,
+      creditLimit,
+      currentExposure,
+      availableCredit: creditLimit - currentExposure,
+      maxBet,
+      maxPayout,
+      notes: playerAccountForm.notes.trim(),
+      createdAt: existingAccount?.createdAt || new Date().toISOString(),
+    };
+
+    if (editingPlayerAccountId) {
+      setPlayerAccounts(
+        playerAccounts.map((account) =>
+          account.id === editingPlayerAccountId ? nextAccount : account
+        )
+      );
+    } else {
+      setPlayerAccounts([...playerAccounts, nextAccount]);
+    }
+
+    setSelectedAccountId(nextAccount.id);
+    setExpandedNetworkAccountIds((currentIds) =>
+      nextAccount.parentId && !currentIds.includes(nextAccount.parentId)
+        ? [...currentIds, nextAccount.parentId]
+        : currentIds
+    );
+    resetPlayerAccountForm();
+  }
+
+  function deletePlayerAccount(accountId: string) {
+    const account = playerAccounts.find(
+      (createdAccount) => createdAccount.id === accountId
+    );
+
+    if (!account) {
+      return;
+    }
+
+    if (getChildAccounts(account.id).length > 0) {
+      alert("Cannot delete an account that has child accounts.");
+      return;
+    }
+
+    if (!window.confirm("Delete this account? This cannot be undone.")) {
+      return;
+    }
+
+    setPlayerAccounts(
+      playerAccounts.filter((createdAccount) => createdAccount.id !== accountId)
+    );
+    setSelectedAccountId((currentId) => (currentId === accountId ? null : currentId));
+
+    if (editingPlayerAccountId === accountId) {
+      resetPlayerAccountForm();
+    }
+  }
+
+  function addSampleAgentHierarchy() {
+    const existingUsernames = new Set(
+      playerAccounts.map((account) => account.username.trim().toLowerCase())
+    );
+    const sampleUsernames = [
+      "house",
+      "master1",
+      "master2",
+      "master1a",
+      "agent1",
+      "agent2",
+      "agent3",
+      "player1",
+      "player2",
+      "player3",
+      "player4",
+    ];
+
+    if (sampleUsernames.every((username) => existingUsernames.has(username))) {
+      alert("Sample agent hierarchy already exists.");
+      return;
+    }
+
+    const selectedMarket = markets[0];
+    const createdAt = new Date().toISOString();
+    const idSeed = Date.now();
+    const houseId =
+      playerAccounts.find(
+        (account) => account.username.trim().toLowerCase() === "house"
+      )?.id || `ACCOUNT-${idSeed}-house`;
+    const masterId =
+      playerAccounts.find(
+        (account) => account.username.trim().toLowerCase() === "master1"
+      )?.id || `ACCOUNT-${idSeed}-master1`;
+    const master2Id =
+      playerAccounts.find(
+        (account) => account.username.trim().toLowerCase() === "master2"
+      )?.id || `ACCOUNT-${idSeed}-master2`;
+    const master1aId =
+      playerAccounts.find(
+        (account) => account.username.trim().toLowerCase() === "master1a"
+      )?.id || `ACCOUNT-${idSeed}-master1a`;
+    const agent1Id =
+      playerAccounts.find(
+        (account) => account.username.trim().toLowerCase() === "agent1"
+      )?.id || `ACCOUNT-${idSeed}-agent1`;
+    const agent2Id =
+      playerAccounts.find(
+        (account) => account.username.trim().toLowerCase() === "agent2"
+      )?.id || `ACCOUNT-${idSeed}-agent2`;
+    const agent3Id =
+      playerAccounts.find(
+        (account) => account.username.trim().toLowerCase() === "agent3"
+      )?.id || `ACCOUNT-${idSeed}-agent3`;
+    const sampleAccounts: PlayerAccount[] = [
+      {
+        id: houseId,
+        accountType: "super_master",
+        parentId: null,
+        username: "house",
+        displayName: "House / Super Master",
+        email: "house@example.com",
+        phone: "",
+        marketId: selectedMarket?.id || null,
+        language: selectedMarket?.language || "en",
+        currency: selectedMarket?.currency || "USD",
+        status: "active",
+        cashBalance: 0,
+        creditLimit: 0,
+        currentExposure: 0,
+        availableCredit: 0,
+        notes: "Sample house root account",
+        createdAt,
+      },
+      {
+        id: masterId,
+        accountType: "master_agent",
+        parentId: houseId,
+        username: "master1",
+        displayName: "Master Agent 1",
+        email: "master1@example.com",
+        phone: "",
+        marketId: selectedMarket?.id || null,
+        language: selectedMarket?.language || "en",
+        currency: selectedMarket?.currency || "USD",
+        status: "active",
+        cashBalance: 0,
+        creditLimit: 0,
+        currentExposure: 0,
+        availableCredit: 0,
+        notes: "Sample master agent",
+        createdAt,
+      },
+      {
+        id: master2Id,
+        accountType: "master_agent",
+        parentId: houseId,
+        username: "master2",
+        displayName: "Master Agent 2",
+        email: "master2@example.com",
+        phone: "",
+        marketId: selectedMarket?.id || null,
+        language: selectedMarket?.language || "en",
+        currency: selectedMarket?.currency || "USD",
+        status: "active",
+        cashBalance: 0,
+        creditLimit: 0,
+        currentExposure: 0,
+        availableCredit: 0,
+        notes: "Sample master agent under house",
+        createdAt,
+      },
+      {
+        id: master1aId,
+        accountType: "master_agent",
+        parentId: masterId,
+        username: "master1a",
+        displayName: "Master Agent 1A",
+        email: "master1a@example.com",
+        phone: "",
+        marketId: selectedMarket?.id || null,
+        language: selectedMarket?.language || "en",
+        currency: selectedMarket?.currency || "USD",
+        status: "active",
+        cashBalance: 0,
+        creditLimit: 0,
+        currentExposure: 0,
+        availableCredit: 0,
+        notes: "Sample nested master agent under master1",
+        createdAt,
+      },
+      {
+        id: agent1Id,
+        accountType: "agent",
+        parentId: masterId,
+        username: "agent1",
+        displayName: "Agent 1",
+        email: "agent1@example.com",
+        phone: "",
+        marketId: selectedMarket?.id || null,
+        language: selectedMarket?.language || "en",
+        currency: selectedMarket?.currency || "USD",
+        status: "active",
+        cashBalance: 0,
+        creditLimit: 5000,
+        currentExposure: 0,
+        availableCredit: 5000,
+        notes: "Sample agent under master1a",
+        createdAt,
+      },
+      {
+        id: agent2Id,
+        accountType: "agent",
+        parentId: master1aId,
+        username: "agent2",
+        displayName: "Agent 2",
+        email: "agent2@example.com",
+        phone: "",
+        marketId: selectedMarket?.id || null,
+        language: selectedMarket?.language || "en",
+        currency: selectedMarket?.currency || "USD",
+        status: "active",
+        cashBalance: 0,
+        creditLimit: 5000,
+        currentExposure: 0,
+        availableCredit: 5000,
+        notes: "Sample agent under master1",
+        createdAt,
+      },
+      {
+        id: agent3Id,
+        accountType: "agent",
+        parentId: master2Id,
+        username: "agent3",
+        displayName: "Agent 3",
+        email: "agent3@example.com",
+        phone: "",
+        marketId: selectedMarket?.id || null,
+        language: selectedMarket?.language || "en",
+        currency: selectedMarket?.currency || "USD",
+        status: "active",
+        cashBalance: 0,
+        creditLimit: 5000,
+        currentExposure: 0,
+        availableCredit: 5000,
+        notes: "Sample agent under master2",
+        createdAt,
+      },
+      {
+        id: `ACCOUNT-${idSeed}-player1`,
+        accountType: "player",
+        parentId: agent1Id,
+        username: "player1",
+        displayName: "Player 1",
+        email: "player1@example.com",
+        phone: "",
+        marketId: selectedMarket?.id || null,
+        language: selectedMarket?.language || "en",
+        currency: selectedMarket?.currency || "USD",
+        status: "active",
+        cashBalance: 100,
+        creditLimit: 1000,
+        currentExposure: 125,
+        availableCredit: 875,
+        maxBet: 50,
+        maxPayout: 5000,
+        notes: "Sample player under agent1",
+        createdAt,
+      },
+      {
+        id: `ACCOUNT-${idSeed}-player2`,
+        accountType: "player",
+        parentId: agent1Id,
+        username: "player2",
+        displayName: "Player 2",
+        email: "player2@example.com",
+        phone: "",
+        marketId: selectedMarket?.id || null,
+        language: selectedMarket?.language || "en",
+        currency: selectedMarket?.currency || "USD",
+        status: "active",
+        cashBalance: 75,
+        creditLimit: 1000,
+        currentExposure: 0,
+        availableCredit: 1000,
+        maxBet: 50,
+        maxPayout: 5000,
+        notes: "Sample player under agent1",
+        createdAt,
+      },
+      {
+        id: `ACCOUNT-${idSeed}-player3`,
+        accountType: "player",
+        parentId: agent2Id,
+        username: "player3",
+        displayName: "Player 3",
+        email: "player3@example.com",
+        phone: "",
+        marketId: selectedMarket?.id || null,
+        language: selectedMarket?.language || "en",
+        currency: selectedMarket?.currency || "USD",
+        status: "active",
+        cashBalance: 50,
+        creditLimit: 750,
+        currentExposure: 25,
+        availableCredit: 725,
+        maxBet: 25,
+        maxPayout: 2500,
+        notes: "Sample player under agent2",
+        createdAt,
+      },
+      {
+        id: `ACCOUNT-${idSeed}-player4`,
+        accountType: "player",
+        parentId: agent3Id,
+        username: "player4",
+        displayName: "Player 4",
+        email: "player4@example.com",
+        phone: "",
+        marketId: selectedMarket?.id || null,
+        language: selectedMarket?.language || "en",
+        currency: selectedMarket?.currency || "USD",
+        status: "active",
+        cashBalance: 50,
+        creditLimit: 750,
+        currentExposure: 25,
+        availableCredit: 725,
+        maxBet: 25,
+        maxPayout: 2500,
+        notes: "Sample player under agent3",
+        createdAt,
+      },
+    ];
+    const newAccounts = sampleAccounts.filter(
+      (account) => !existingUsernames.has(account.username.trim().toLowerCase())
+    );
+
+    if (newAccounts.length === 0) {
+      alert("Sample agent hierarchy already exists.");
+      return;
+    }
+
+    setPlayerAccounts([...playerAccounts, ...newAccounts]);
+  }
+
+  function getAccountTypeLabel(accountType: AccountType) {
+    if (accountType === "super_master") return "House / Super Master";
+    if (accountType === "master_agent") return "Master Agent";
+    if (accountType === "agent") return "Agent";
+    return "Player";
+  }
+
+  function getAllowedChildAccountTypes(accountType: AccountType): AccountType[] {
+    if (accountType === "super_master") return ["master_agent"];
+    if (accountType === "master_agent") return ["master_agent", "agent"];
+    if (accountType === "agent") return ["player"];
+    return [];
+  }
+
+  function toggleNetworkAccount(accountId: string) {
+    setExpandedNetworkAccountIds((currentIds) =>
+      currentIds.includes(accountId)
+        ? currentIds.filter((currentId) => currentId !== accountId)
+        : [...currentIds, accountId]
+    );
+  }
+
+  function selectNetworkAccount(accountId: string) {
+    setSelectedAccountId(accountId);
+    setAccountPanelMode(null);
+  }
+
+  function startCreateChildAccount(parentAccount: PlayerAccount, accountType: AccountType) {
+    setSelectedAccountId(parentAccount.id);
+    setEditingPlayerAccountId(null);
+    setAccountPanelMode("create");
+    setExpandedNetworkAccountIds((currentIds) =>
+      currentIds.includes(parentAccount.id)
+        ? currentIds
+        : [...currentIds, parentAccount.id]
+    );
+    setPlayerAccountForm({
+      accountType,
+      parentId: parentAccount.id,
+      username: "",
+      displayName: "",
+      email: "",
+      phone: "",
+      marketId: parentAccount.marketId || "",
+      language: parentAccount.language || "",
+      currency: parentAccount.currency || "USD",
+      status: "active",
+      cashBalance: "0",
+      creditLimit: "0",
+      currentExposure: "0",
+      maxBet: "",
+      maxPayout: "",
+      notes: "",
+    });
+  }
+
+  function startCreateRootAccount() {
+    setSelectedAccountId(null);
+    setEditingPlayerAccountId(null);
+    setAccountPanelMode("create");
+    setPlayerAccountForm({
+      accountType: "super_master",
+      parentId: "",
+      username: "",
+      displayName: "",
+      email: "",
+      phone: "",
+      marketId: "",
+      language: "",
+      currency: "USD",
+      status: "active",
+      cashBalance: "0",
+      creditLimit: "0",
+      currentExposure: "0",
+      maxBet: "",
+      maxPayout: "",
+      notes: "",
+    });
+  }
+
+  function startEditSelectedAccount(account: PlayerAccount) {
+    editPlayerAccount(account);
+    setSelectedAccountId(account.id);
+    setAccountPanelMode("edit");
+  }
+
+  function startMoveSelectedAccount(account: PlayerAccount) {
+    editPlayerAccount(account);
+    setSelectedAccountId(account.id);
+    setAccountPanelMode("move");
+  }
+
+  function toggleSelectedAccountStatus(account: PlayerAccount) {
+    setPlayerAccounts(
+      playerAccounts.map((createdAccount) =>
+        createdAccount.id === account.id
+          ? {
+              ...createdAccount,
+              status:
+                createdAccount.status === "active" ? "inactive" : "active",
+            }
+          : createdAccount
+      )
+    );
+  }
+
+  function accountMatchesTreeFilter(account: PlayerAccount) {
+    if (accountTreeFilter === "all") return true;
+    if (accountTreeFilter === "active") return account.status === "active";
+    if (accountTreeFilter === "inactive") return account.status !== "active";
+    return account.accountType === accountTreeFilter;
+  }
+
+  function accountMatchesSearch(account: PlayerAccount) {
+    const searchTerm = accountSearchTerm.trim().toLowerCase();
+
+    if (!searchTerm) {
+      return true;
+    }
+
+    return (
+      account.username.toLowerCase().includes(searchTerm) ||
+      account.displayName.toLowerCase().includes(searchTerm)
+    );
+  }
+
+  function shouldShowAccountInTree(account: PlayerAccount): boolean {
+    const directMatch =
+      accountMatchesTreeFilter(account) && accountMatchesSearch(account);
+
+    if (directMatch) {
+      return true;
+    }
+
+    return getChildAccounts(account.id).some((childAccount) =>
+      shouldShowAccountInTree(childAccount)
+    );
+  }
+
+  function renderNetworkTreeNode(account: PlayerAccount, depth = 0): ReactNode {
+    if (!shouldShowAccountInTree(account)) {
+      return null;
+    }
+
+    const childAccounts = getChildAccounts(account.id).filter((childAccount) =>
+      shouldShowAccountInTree(childAccount)
+    );
+    const hasChildren = childAccounts.length > 0;
+    const isExpanded =
+      expandedNetworkAccountIds.includes(account.id) ||
+      accountSearchTerm.trim().length > 0 ||
+      accountTreeFilter !== "all";
+    const isSelected = selectedAccountId === account.id;
+
+    return (
+      <div key={account.id}>
+        <div
+          className={`flex cursor-pointer items-center gap-2 rounded px-2 py-2 text-sm ${
+            isSelected ? "bg-blue-50 text-blue-900" : "hover:bg-gray-100"
+          }`}
+          style={{ marginLeft: `${depth * 18}px` }}
+          onClick={() => selectNetworkAccount(account.id)}
+        >
+          <button
+            type="button"
+            onClick={(event) => {
+              event.stopPropagation();
+              if (hasChildren) {
+                toggleNetworkAccount(account.id);
+              }
+            }}
+            className="w-5 text-center text-xs text-gray-600"
+          >
+            {hasChildren ? (isExpanded ? "▼" : "▶") : ""}
+          </button>
+          <span
+            className={`h-2 w-2 rounded-full ${
+              account.status === "active" ? "bg-green-600" : "bg-gray-400"
+            }`}
+          />
+          <span className="font-semibold">{account.username.toUpperCase()}</span>
+          <span className="rounded bg-gray-200 px-2 py-0.5 text-xs text-gray-700">
+            {getAccountTypeLabel(account.accountType)}
+          </span>
+          {hasChildren && (
+            <span className="text-xs text-gray-500">({childAccounts.length})</span>
+          )}
+        </div>
+
+        {hasChildren && isExpanded && (
+          <div className="border-l border-gray-200">
+            {childAccounts.map((childAccount) =>
+              renderNetworkTreeNode(childAccount, depth + 1)
+            )}
+          </div>
+        )}
+      </div>
+    );
+  }
+
+  function renderAccountHierarchyNode(
+    account: PlayerAccount,
+    depth = 0
+  ): ReactNode {
+    const childAccounts = getChildAccounts(account.id);
+
+    return (
+      <div
+        key={account.id}
+        className={`rounded border ${
+          depth === 0 ? "bg-gray-50 p-4" : "bg-white p-3"
+        }`}
+      >
+        <p className="text-sm font-semibold uppercase text-gray-500">
+          {getAccountTypeLabel(account.accountType)}
+        </p>
+        <p className="font-semibold text-gray-900">
+          {account.displayName} ({account.username})
+        </p>
+
+        {childAccounts.length > 0 && (
+          <div className="mt-3 ml-4 grid gap-3 border-l pl-4">
+            {childAccounts.map((childAccount) =>
+              renderAccountHierarchyNode(childAccount, depth + 1)
+            )}
+          </div>
+        )}
+      </div>
+    );
+  }
+
+  function getTransactionTypesForCategory(category: LedgerCategory): TransactionType[] {
+    if (category === "accounting") {
+      return [
+        "deposit",
+        "withdrawal",
+        "zero_balance_credit",
+        "zero_balance_debit",
+        "transfer_in",
+        "transfer_out",
+        "manual_adjustment",
+      ];
+    }
+
+    if (category === "operational") {
+      return [
+        "win",
+        "loss",
+        "credit_adjustment",
+        "debit_adjustment",
+        "freeplay_win",
+      ];
+    }
+
+    return [
+      "freeplay_grant",
+      "freeplay_wager",
+      "freeplay_expiration",
+      "freeplay_adjustment",
+      "freeplay_reversal",
+    ];
+  }
+
+  function getAccountLedgerTransactions(accountId: string) {
+    return ledgerTransactions.filter(
+      (transaction) => transaction.accountId === accountId
+    );
+  }
+
+  function getAccountingTransactionImpact(transaction: LedgerTransaction): number {
+    if (transaction.transactionType === "reversal") {
+      const parentTransaction = ledgerTransactions.find(
+        (createdTransaction) => createdTransaction.id === transaction.parentTransactionId
+      );
+
+      return parentTransaction ? -getAccountingTransactionImpact(parentTransaction) : 0;
+    }
+
+    if (
+      [
+        "deposit",
+        "zero_balance_credit",
+        "transfer_in",
+        "manual_adjustment",
+      ].includes(transaction.transactionType)
+    ) {
+      return transaction.amount;
+    }
+
+    if (
+      ["withdrawal", "zero_balance_debit", "transfer_out"].includes(
+        transaction.transactionType
+      )
+    ) {
+      return -transaction.amount;
+    }
+
+    return 0;
+  }
+
+  function getOperationalTransactionImpact(transaction: LedgerTransaction): number {
+    if (transaction.transactionType === "reversal") {
+      const parentTransaction = ledgerTransactions.find(
+        (createdTransaction) => createdTransaction.id === transaction.parentTransactionId
+      );
+
+      return parentTransaction ? -getOperationalTransactionImpact(parentTransaction) : 0;
+    }
+
+    if (
+      ["win", "credit_adjustment", "freeplay_win"].includes(
+        transaction.transactionType
+      )
+    ) {
+      return transaction.amount;
+    }
+
+    if (["loss", "debit_adjustment"].includes(transaction.transactionType)) {
+      return -transaction.amount;
+    }
+
+    return 0;
+  }
+
+  function getFreeplayTransactionImpact(transaction: LedgerTransaction): number {
+    if (transaction.transactionType === "reversal") {
+      const parentTransaction = ledgerTransactions.find(
+        (createdTransaction) => createdTransaction.id === transaction.parentTransactionId
+      );
+
+      return parentTransaction ? -getFreeplayTransactionImpact(parentTransaction) : 0;
+    }
+
+    if (
+      ["freeplay_grant", "freeplay_adjustment", "freeplay_reversal"].includes(
+        transaction.transactionType
+      )
+    ) {
+      return transaction.amount;
+    }
+
+    if (
+      ["freeplay_wager", "freeplay_expiration"].includes(
+        transaction.transactionType
+      )
+    ) {
+      return -transaction.amount;
+    }
+
+    return 0;
+  }
+
+  function calculateAccountingBalance(accountId: string) {
+    return getAccountLedgerTransactions(accountId).reduce((balance, transaction) => {
+      if (transaction.category !== "accounting") return balance;
+
+      return balance + getAccountingTransactionImpact(transaction);
+    }, 0);
+  }
+
+  function calculateWeeklyFigure(accountId: string) {
+    return getAccountLedgerTransactions(accountId).reduce((figure, transaction) => {
+      if (transaction.category !== "operational") return figure;
+
+      return figure + getOperationalTransactionImpact(transaction);
+    }, 0);
+  }
+
+  function calculateFreeplayBalance(accountId: string) {
+    return getAccountLedgerTransactions(accountId).reduce((balance, transaction) => {
+      if (transaction.category !== "freeplay") return balance;
+
+      return balance + getFreeplayTransactionImpact(transaction);
+    }, 0);
+  }
+
+  function calculatePendingExposure(accountId: string) {
+    const account = playerAccounts.find(
+      (createdAccount) => createdAccount.id === accountId
+    );
+
+    // Future pendingExposure = open unsettled wagers from ticket/risk integrations.
+    return Number(account?.currentExposure || 0);
+  }
+
+  function getAccountFinancialSummary(accountId: string): AccountFinancialSummary {
+    const account = playerAccounts.find(
+      (createdAccount) => createdAccount.id === accountId
+    );
+    const pendingExposure = calculatePendingExposure(accountId);
+    const allocatedCredit = 0;
+
+    // Future hierarchical credit allocation: credit allocated downward reduces available credit upward.
+    return {
+      accountId,
+      accountingBalance: calculateAccountingBalance(accountId),
+      weeklyFigure: calculateWeeklyFigure(accountId),
+      freeplayBalance: calculateFreeplayBalance(accountId),
+      pendingExposure,
+      availableCredit: Number(account?.creditLimit || 0) - allocatedCredit - pendingExposure,
+    };
+  }
+
+  function saveLedgerTransaction(event: React.FormEvent) {
+    event.preventDefault();
+
+    const amount = Number(ledgerForm.amount || 0);
+
+    if (!ledgerForm.accountId || !ledgerForm.category || !ledgerForm.transactionType) {
+      alert("Please select account, category, and transaction type.");
+      return;
+    }
+
+    if (Number.isNaN(amount) || amount <= 0) {
+      alert("Please enter a positive numeric amount.");
+      return;
+    }
+
+    if (!ledgerForm.description.trim()) {
+      alert("Please enter a transaction description.");
+      return;
+    }
+
+    const transaction: LedgerTransaction = {
+      id: `LEDGER-${Date.now()}`,
+      accountId: ledgerForm.accountId,
+      category: ledgerForm.category,
+      transactionType: ledgerForm.transactionType,
+      amount,
+      description: ledgerForm.description.trim(),
+      referenceId: ledgerForm.referenceId.trim() || null,
+      parentTransactionId: null,
+      createdBy: ledgerForm.createdBy.trim() || null,
+      createdAt: new Date().toISOString(),
+    };
+
+    setLedgerTransactions([...ledgerTransactions, transaction]);
+    setLedgerForm({
+      ...ledgerForm,
+      amount: "",
+      description: "",
+      referenceId: "",
+    });
+  }
+
+  function reverseLedgerTransaction(transaction: LedgerTransaction) {
+    if (!window.confirm("Reverse this transaction? The original transaction will remain unchanged.")) {
+      return;
+    }
+
+    const reversal: LedgerTransaction = {
+      id: `LEDGER-${Date.now()}-REVERSAL`,
+      accountId: transaction.accountId,
+      category: transaction.category,
+      transactionType: "reversal",
+      amount: -transaction.amount,
+      description: `Reversal of ${transaction.id}: ${transaction.description}`,
+      referenceId: transaction.referenceId || null,
+      parentTransactionId: transaction.id,
+      createdBy: ledgerForm.createdBy.trim() || "admin",
+      createdAt: new Date().toISOString(),
+    };
+
+    setLedgerTransactions([...ledgerTransactions, reversal]);
+  }
+
+  function getStatementTransactions(accountId: string) {
+    const statementTypes: TransactionType[] = [
+      "deposit",
+      "withdrawal",
+      "win",
+      "loss",
+      "credit_adjustment",
+      "debit_adjustment",
+      "freeplay_win",
+    ];
+
+    return getAccountLedgerTransactions(accountId)
+      .filter((transaction) => statementTypes.includes(transaction.transactionType))
+      .sort(
+        (a, b) =>
+          new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
+      );
+  }
+
+  function generateTicketNumber() {
+    return `TICKET-${Date.now()}`;
+  }
+
+  function getTicketLines(ticketId: string) {
+    return ticketLines.filter((line) => line.ticketId === ticketId);
+  }
+
+  function calculateTicketTotalStake(ticketId: string) {
+    return getTicketLines(ticketId).reduce(
+      (total, line) => total + Number(line.stake || 0),
+      0
+    );
+  }
+
+  function calculateTicketPotentialPayout(ticketId: string) {
+    return getTicketLines(ticketId).reduce(
+      (total, line) => total + Number(line.potentialPayout || 0),
+      0
+    );
+  }
+
+  function isOpenTicketStatus(status: TicketStatus) {
+    return status === "pending" || status === "accepted";
+  }
+
+  function calculatePendingExposureForAccount(accountId: string) {
+    const openTicketIds = new Set(
+      tickets
+        .filter(
+          (ticket) => ticket.accountId === accountId && isOpenTicketStatus(ticket.status)
+        )
+        .map((ticket) => ticket.id)
+    );
+
+    return ticketLines
+      .filter((line) => openTicketIds.has(line.ticketId))
+      .reduce((total, line) => total + Number(line.stake || 0), 0);
+  }
+
+  function calculatePendingExposureForDownline(accountId: string) {
+    const accountIds = [accountId, ...getDescendantAccountIds(accountId)];
+
+    return accountIds.reduce(
+      (total, currentAccountId) =>
+        total + calculatePendingExposureForAccount(currentAccountId),
+      0
+    );
+  }
+
+  function parseTicketSelectedNumbers(value: string) {
+    const trimmedValue = value.trim();
+
+    if (!trimmedValue) {
+      return undefined;
+    }
+
+    const numbers = trimmedValue
+      .split(/[,-]/)
+      .map((number) => Number(number.trim()))
+      .filter((number) => Number.isInteger(number));
+
+    return numbers.length > 0 ? numbers : undefined;
+  }
+
+  function addDraftTicketLine() {
+    const stake = Number(ticketLineForm.stake || 0);
+    const potentialPayout = Number(ticketLineForm.potentialPayout || 0);
+
+    if (!ticketLineForm.wagerTypeId) {
+      alert("Please select a wager type.");
+      return;
+    }
+
+    if (Number.isNaN(stake) || stake <= 0) {
+      alert("Ticket line stake must be greater than 0.");
+      return;
+    }
+
+    if (Number.isNaN(potentialPayout)) {
+      alert("Potential payout must be numeric.");
+      return;
+    }
+
+    setDraftTicketLines([
+      ...draftTicketLines,
+      {
+        wagerTypeId: ticketLineForm.wagerTypeId,
+        wagerOptionId: ticketLineForm.wagerOptionId || null,
+        selectedNumbers: parseTicketSelectedNumbers(ticketLineForm.selectedNumbers),
+        stake,
+        potentialPayout,
+        status: "pending",
+        resultAmount: null,
+      },
+    ]);
+    setTicketLineForm({
+      wagerTypeId: "",
+      wagerOptionId: "",
+      selectedNumbers: "",
+      stake: "",
+      potentialPayout: "",
+    });
+  }
+
+  function removeDraftTicketLine(index: number) {
+    setDraftTicketLines(
+      draftTicketLines.filter((_, lineIndex) => lineIndex !== index)
+    );
+  }
+
+  function saveTestTicket(event: React.FormEvent) {
+    event.preventDefault();
+
+    if (
+      !ticketForm.accountId ||
+      !ticketForm.gameId ||
+      !ticketForm.drawingId ||
+      !ticketForm.fundingType
+    ) {
+      alert("Please select account, game, drawing, and funding type.");
+      return;
+    }
+
+    if (draftTicketLines.length === 0) {
+      alert("Please add at least one ticket line.");
+      return;
+    }
+
+    const ticketId = `TICKET-ID-${Date.now()}`;
+    const createdAt = new Date().toISOString();
+    const totalStake = draftTicketLines.reduce(
+      (total, line) => total + Number(line.stake || 0),
+      0
+    );
+    const potentialPayout = draftTicketLines.reduce(
+      (total, line) => total + Number(line.potentialPayout || 0),
+      0
+    );
+    const ticket: Ticket = {
+      id: ticketId,
+      ticketNumber: generateTicketNumber(),
+      accountId: ticketForm.accountId,
+      marketId: ticketForm.marketId || null,
+      gameId: ticketForm.gameId,
+      drawingId: ticketForm.drawingId,
+      totalStake,
+      potentialPayout,
+      fundingType: ticketForm.fundingType,
+      status: "pending",
+      createdAt,
+      acceptedAt: null,
+      settledAt: null,
+      // Future ticket acceptance must create ledger/exposure records.
+      // Future settlement must create operational ledger entries per ticket line.
+      ledgerTransactionIds: [],
+      notes: ticketForm.notes.trim(),
+    };
+    const createdLines = draftTicketLines.map((line, index) => ({
+      ...line,
+      id: `TICKET-LINE-${Date.now()}-${index}`,
+      ticketId,
+      createdAt,
+    }));
+
+    setTickets([...tickets, ticket]);
+    setTicketLines([...ticketLines, ...createdLines]);
+    setExpandedTicketIds([...expandedTicketIds, ticketId]);
+    setDraftTicketLines([]);
+    setTicketForm({
+      accountId: "",
+      marketId: "",
+      gameId: "",
+      drawingId: "",
+      fundingType: "cash",
+      notes: "",
+    });
+  }
+
+  function toggleTicketExpanded(ticketId: string) {
+    setExpandedTicketIds((currentIds) =>
+      currentIds.includes(ticketId)
+        ? currentIds.filter((currentId) => currentId !== ticketId)
+        : [...currentIds, ticketId]
+    );
+  }
+
+  function updateTicketStatus(ticketId: string, nextStatus: TicketStatus) {
+    setTickets(
+      tickets.map((ticket) => {
+        if (ticket.id !== ticketId) {
+          return ticket;
+        }
+
+        if (nextStatus === "accepted" && ticket.status !== "pending") {
+          return ticket;
+        }
+
+        if (nextStatus === "cancelled" && ticket.status !== "pending") {
+          return ticket;
+        }
+
+        if (
+          nextStatus === "void" &&
+          ticket.status !== "pending" &&
+          ticket.status !== "accepted"
+        ) {
+          return ticket;
+        }
+
+        return {
+          ...ticket,
+          status: nextStatus,
+          acceptedAt:
+            nextStatus === "accepted" ? new Date().toISOString() : ticket.acceptedAt,
+        };
+      })
+    );
+  }
+
+  function generateSettlementRunId() {
+    return `SETTLEMENT-RUN-${Date.now()}`;
+  }
+
+  function getSettlementRecordsForRun(settlementRunId: string) {
+    return settlementRecords.filter(
+      (record) => record.settlementRunId === settlementRunId
+    );
+  }
+
+  function getSettlementRecordsForTicket(ticketId: string) {
+    return settlementRecords.filter((record) => record.ticketId === ticketId);
+  }
+
+  function getSettlementRunsForDrawing(drawingId: string) {
+    return settlementRuns.filter((run) => run.drawingId === drawingId);
+  }
+
+  function calculateSettlementRunTotals(settlementRunId: string) {
+    const records = getSettlementRecordsForRun(settlementRunId);
+    const processedTicketIds = new Set(records.map((record) => record.ticketId));
+
+    return {
+      processedTicketCount: processedTicketIds.size,
+      processedLineCount: records.length,
+      totalStake: records.reduce(
+        (total, record) => total + Number(record.stake || 0),
+        0
+      ),
+      totalPayout: records.reduce(
+        (total, record) => total + Number(record.payout || 0),
+        0
+      ),
+      totalNet: records.reduce(
+        (total, record) => total + Number(record.netAmount || 0),
+        0
+      ),
+    };
+  }
+
+  function hasExistingCompletedSettlementForDrawing(drawingId: string) {
+    return settlementRuns.some(
+      (run) => run.drawingId === drawingId && run.status === "completed"
+    );
+  }
+
+  function getDrawingGameId(drawing: any) {
+    if (drawing?.gameId) {
+      return String(drawing.gameId);
+    }
+
+    const drawingGameIndex = games.findIndex((game: any) => game === drawing?.game);
+
+    if (drawingGameIndex >= 0) {
+      return getGameLocalId(drawing.game, drawingGameIndex);
+    }
+
+    const matchingGameIndex = games.findIndex(
+      (game: any) =>
+        game.name === drawing?.game?.name && game.state === drawing?.game?.state
+    );
+
+    if (matchingGameIndex >= 0) {
+      return getGameLocalId(games[matchingGameIndex], matchingGameIndex);
+    }
+
+    return "";
+  }
+
+  function createSettlementRun(event: React.FormEvent) {
+    event.preventDefault();
+
+    if (!settlementForm.drawingId) {
+      alert("Please select a drawing.");
+      return;
+    }
+
+    if (hasExistingCompletedSettlementForDrawing(settlementForm.drawingId)) {
+      alert(
+        "A completed settlement run already exists for this drawing. Future resettlement will require explicit override authorization."
+      );
+      return;
+    }
+
+    if (
+      getSettlementRunsForDrawing(settlementForm.drawingId).length > 0 &&
+      !confirm(
+        "A settlement run already exists for this drawing. Create another pending run?"
+      )
+    ) {
+      return;
+    }
+
+    const drawing = drawings.find(
+      (createdDrawing: any) => createdDrawing.id === settlementForm.drawingId
+    );
+    const createdAt = new Date().toISOString();
+
+    setSettlementRuns([
+      ...settlementRuns,
+      {
+        id: generateSettlementRunId(),
+        drawingId: settlementForm.drawingId,
+        gameId: getDrawingGameId(drawing),
+        status: "pending",
+        startedAt: null,
+        completedAt: null,
+        processedTicketCount: 0,
+        processedLineCount: 0,
+        totalStake: 0,
+        totalPayout: 0,
+        totalNet: 0,
+        notes: settlementForm.notes.trim(),
+        createdAt,
+      },
+    ]);
+    setSettlementForm({
+      drawingId: "",
+      notes: "",
+    });
+  }
+
+  function generatePlaceholderSettlementRecords(settlementRunId: string) {
+    const run = settlementRuns.find(
+      (createdRun) => createdRun.id === settlementRunId
+    );
+
+    if (!run) {
+      return;
+    }
+
+    if (getSettlementRecordsForRun(settlementRunId).length > 0) {
+      alert("Placeholder settlement records already exist for this run.");
+      return;
+    }
+
+    const acceptedTickets = tickets.filter(
+      (ticket) =>
+        ticket.drawingId === run.drawingId && ticket.status === "accepted"
+    );
+    const acceptedTicketIds = new Set(acceptedTickets.map((ticket) => ticket.id));
+    const createdAt = new Date().toISOString();
+    const newRecords: SettlementRecord[] = ticketLines
+      .filter((line) => acceptedTicketIds.has(line.ticketId))
+      .map((line, index) => {
+        const ticket = acceptedTickets.find(
+          (acceptedTicket) => acceptedTicket.id === line.ticketId
+        );
+
+        return {
+          id: `SETTLEMENT-RECORD-${Date.now()}-${index}`,
+          settlementRunId,
+          ticketId: line.ticketId,
+          ticketLineId: line.id,
+          accountId: ticket?.accountId || "",
+          gameId: run.gameId,
+          drawingId: run.drawingId,
+          wagerTypeId: line.wagerTypeId,
+          wagerOptionId: line.wagerOptionId || null,
+          stake: Number(line.stake || 0),
+          payout: 0,
+          netAmount: 0,
+          outcome: "push",
+          status: "pending",
+          version: 1,
+          previousSettlementRecordId: null,
+          reversalOfSettlementRecordId: null,
+          ledgerTransactionIds: [],
+          createdAt,
+        };
+      });
+
+    const totalStake = newRecords.reduce(
+      (total, record) => total + Number(record.stake || 0),
+      0
+    );
+
+    setSettlementRecords([...settlementRecords, ...newRecords]);
+    setSettlementRuns(
+      settlementRuns.map((createdRun) =>
+        createdRun.id === settlementRunId
+          ? {
+              ...createdRun,
+              processedTicketCount: acceptedTickets.length,
+              processedLineCount: newRecords.length,
+              totalStake,
+              totalPayout: 0,
+              totalNet: 0,
+            }
+          : createdRun
+      )
+    );
+  }
+
+  function toggleSettlementRunExpanded(settlementRunId: string) {
+    setExpandedSettlementRunIds((currentIds) =>
+      currentIds.includes(settlementRunId)
+        ? currentIds.filter((currentId) => currentId !== settlementRunId)
+        : [...currentIds, settlementRunId]
+    );
+  }
+
+  function updateSettlementRunStatus(
+    settlementRunId: string,
+    nextStatus: SettlementRunStatus
+  ) {
+    const run = settlementRuns.find(
+      (createdRun) => createdRun.id === settlementRunId
+    );
+
+    if (!run) {
+      return;
+    }
+
+    if (nextStatus === "running" && run.status !== "pending") {
+      return;
+    }
+
+    if (nextStatus === "completed") {
+      if (run.status !== "running") {
+        return;
+      }
+
+      if (
+        settlementRuns.some(
+          (createdRun) =>
+            createdRun.id !== settlementRunId &&
+            createdRun.drawingId === run.drawingId &&
+            createdRun.status === "completed"
+        )
+      ) {
+        alert("A completed settlement run already exists for this drawing.");
+        return;
+      }
+    }
+
+    if (
+      nextStatus === "failed" &&
+      run.status !== "pending" &&
+      run.status !== "running"
+    ) {
+      return;
+    }
+
+    if (nextStatus === "reversed" && run.status !== "completed") {
+      return;
+    }
+
+    const now = new Date().toISOString();
+    const totals = calculateSettlementRunTotals(settlementRunId);
+
+    setSettlementRuns(
+      settlementRuns.map((createdRun) =>
+        createdRun.id === settlementRunId
+          ? {
+              ...createdRun,
+              ...totals,
+              status: nextStatus,
+              startedAt:
+                nextStatus === "running"
+                  ? now
+                  : createdRun.startedAt,
+              completedAt:
+                nextStatus === "completed" || nextStatus === "failed"
+                  ? now
+                  : createdRun.completedAt,
+            }
+          : createdRun
+      )
+    );
+
+    if (nextStatus === "reversed") {
+      // Future ledger reversal entries must be linked here without deleting originals.
+      setSettlementRecords(
+        settlementRecords.map((record) =>
+          record.settlementRunId === settlementRunId
+            ? {
+                ...record,
+                status: "reversed",
+                reversalOfSettlementRecordId:
+                  record.reversalOfSettlementRecordId || record.id,
+              }
+            : record
+        )
+      );
+    }
+  }
+
+  function addDefaultKenoWagerTypes() {
+    if (!wagerTypeForm.gameId) {
+      alert("Select a Keno game first.");
+      return;
+    }
+
+    const selectedGame = games.find(
+      (game: any, index: number) => getGameLocalId(game, index) === wagerTypeForm.gameId
+    );
+
+    if (!selectedGame || selectedGame.gameType !== "keno_style") {
+      alert("Select a valid Keno game first.");
+      return;
+    }
+
+    const activePayTable = payTables.find(
+      (payTable) => payTable.gameId === wagerTypeForm.gameId && payTable.active
+    );
+    const categoryDefaults: Array<Omit<WagerType, "id" | "gameId" | "active" | "createdAt">> = [
+      {
+        name: "Standard Spots",
+        code: "standard_spots",
+        settlementMethod: "hit_count",
+        payTableId: activePayTable?.id || null,
+      },
+      {
+        name: "Bullseye",
+        code: "bullseye",
+        settlementMethod: "hit_count_bullseye",
+        payTableId: activePayTable?.id || null,
+      },
+      {
+        name: "Dragon/Tiger",
+        code: "dragon_tiger",
+        settlementMethod: "dragon_tiger",
+      },
+      {
+        name: "Up/Down",
+        code: "up_down",
+        settlementMethod: "selection_match",
+      },
+      {
+        name: "Odd/Even",
+        code: "odd_even",
+        settlementMethod: "selection_match",
+      },
+      {
+        name: "Big/Small",
+        code: "big_small",
+        settlementMethod: "selection_match",
+      },
+      {
+        name: "Elements",
+        code: "elements",
+        settlementMethod: "element_count",
+        metricKey: "woodCount",
+      },
+    ];
+    const optionDefaults = [
+      { wagerTypeCode: "standard_spots", name: "Standard", code: "standard" },
+      { wagerTypeCode: "bullseye", name: "Bullseye", code: "bullseye" },
+      { wagerTypeCode: "dragon_tiger", name: "Dragon", code: "dragon" },
+      { wagerTypeCode: "dragon_tiger", name: "Tiger", code: "tiger" },
+      { wagerTypeCode: "dragon_tiger", name: "DT-Tie", code: "dt_tie" },
+      { wagerTypeCode: "up_down", name: "Up", code: "up" },
+      { wagerTypeCode: "up_down", name: "Down", code: "down" },
+      { wagerTypeCode: "up_down", name: "UD-Tie", code: "ud_tie" },
+      { wagerTypeCode: "odd_even", name: "Odd", code: "odd" },
+      { wagerTypeCode: "odd_even", name: "Even", code: "even" },
+      { wagerTypeCode: "big_small", name: "Big", code: "big" },
+      { wagerTypeCode: "big_small", name: "Small", code: "small" },
+      { wagerTypeCode: "elements", name: "Wood", code: "wood" },
+      { wagerTypeCode: "elements", name: "Fire", code: "fire" },
+      { wagerTypeCode: "elements", name: "Earth", code: "earth" },
+      { wagerTypeCode: "elements", name: "Metal", code: "metal" },
+      { wagerTypeCode: "elements", name: "Water", code: "water" },
+    ];
+    const existingCodes = new Set(
+      wagerTypes
+        .filter((wagerType) => wagerType.gameId === wagerTypeForm.gameId)
+        .map((wagerType) => wagerType.code)
+    );
+    const createdAt = new Date().toISOString();
+    const createdIdSeed = Date.now();
+    const newDefaults = categoryDefaults
+      .filter((defaultType) => !existingCodes.has(defaultType.code))
+      .map((defaultType, index) => ({
+        id: `WAGER-${createdIdSeed}-${index}`,
+        gameId: wagerTypeForm.gameId,
+        active: true,
+        createdAt,
+        thresholdValue: null,
+        payTableId: null,
+        ...defaultType,
+      }));
+    const nextWagerTypes = [...wagerTypes, ...newDefaults];
+    const wagerTypeByCode = new Map(
+      nextWagerTypes
+        .filter((wagerType) => wagerType.gameId === wagerTypeForm.gameId)
+        .map((wagerType) => [wagerType.code, wagerType])
+    );
+    const newOptions = optionDefaults
+      .map((defaultOption, index) => {
+        const parentWagerType = wagerTypeByCode.get(defaultOption.wagerTypeCode);
+
+        if (!parentWagerType) {
+          return null;
+        }
+
+        const optionExists = wagerOptions.some(
+          (option) =>
+            option.wagerTypeId === parentWagerType.id &&
+            option.code === defaultOption.code
+        );
+
+        if (optionExists) {
+          return null;
+        }
+
+        return {
+          id: `OPTION-${createdIdSeed}-${index}`,
+          wagerTypeId: parentWagerType.id,
+          name: defaultOption.name,
+          code: defaultOption.code,
+          active: true,
+        };
+      })
+      .filter(Boolean) as WagerOption[];
+
+    if (newDefaults.length === 0 && newOptions.length === 0) {
+      alert("Default wager types already exist for this game.");
+      return;
+    }
+
+    setWagerTypes(nextWagerTypes);
+    setWagerOptions([...wagerOptions, ...newOptions]);
+  }
+
   function handleSubmit(event: React.FormEvent) {
     event.preventDefault();
     const isKenoGame = form.gameType === "keno_style";
@@ -1255,6 +4315,160 @@ alert(
     ? `${newDrawings.length} drawing(s) generated for the next 7 days.`
     : "No new drawings generated. They may already exist or no recurring game was selected."
 );
+}
+
+function getDatePartsInTimeZone(date: Date, timeZone: string) {
+  const formatter = new Intl.DateTimeFormat("en-US", {
+    timeZone,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+  });
+  const parts = formatter.formatToParts(date);
+  const get = (type: string) => parts.find((part) => part.type === type)?.value || "";
+
+  return {
+    date: `${get("year")}-${get("month")}-${get("day")}`,
+    compactDate: `${get("year")}${get("month")}${get("day")}`,
+    time: `${get("hour")}:${get("minute")}`,
+  };
+}
+
+function getKenoGames() {
+  return games.filter((game: any) => game.gameType === "keno_style");
+}
+
+function getSelectedKenoGame() {
+  return games.find(
+    (game: any, index: number) => getGameLocalId(game, index) === selectedKenoGameId
+  );
+}
+
+function getKenoDrawSequence(prefix: string, compactDate: string, pendingDrawings: any[]) {
+  const escapedPrefix = prefix.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const pattern = new RegExp(`^${escapedPrefix}-${compactDate}-(\\d{4})$`);
+  const maxSequence = pendingDrawings.reduce((max: number, drawing: any) => {
+    const match = String(drawing.drawCode || drawing.id || "").match(pattern);
+
+    if (!match) {
+      return max;
+    }
+
+    return Math.max(max, Number(match[1] || 0));
+  }, 0);
+
+  return maxSequence + 1;
+}
+
+function createKenoDrawing(game: any, drawDateTime: Date, pendingDrawings: any[]) {
+  const timeZone = game.defaultTimeZone || "America/New_York";
+  const intervalSeconds = Number(game.drawIntervalSeconds || 240);
+  const prefix = String(game.drawIdPrefix || "HS").trim() || "HS";
+  const drawParts = getDatePartsInTimeZone(drawDateTime, timeZone);
+  const cutoffDateTime = new Date(
+    drawDateTime.getTime() - Math.max(1, Math.min(intervalSeconds, 60)) * 1000
+  );
+  const cutoffParts = getDatePartsInTimeZone(cutoffDateTime, timeZone);
+  const sequence = getKenoDrawSequence(prefix, drawParts.compactDate, pendingDrawings);
+  const drawCode = `${prefix}-${drawParts.compactDate}-${String(sequence).padStart(4, "0")}`;
+
+  return {
+    id: drawCode,
+    drawCode,
+    game,
+    gameId: getGameLocalId(game, games.findIndex((createdGame: any) => createdGame === game)),
+    drawDate: drawParts.date,
+    drawTime: drawParts.time,
+    drawDateTime: drawDateTime.toISOString(),
+    cutoffTime: cutoffParts.time,
+    cutoffDateTime: cutoffDateTime.toISOString(),
+    timeZone,
+    status: "open",
+    maxBet: game.defaultMaxBet || "",
+    maxTotalHandle: game.defaultMaxTotalHandle || "",
+    maxTotalLiability: game.defaultMaxTotalLiability || "",
+    totalHandle: 0,
+    totalPotentialPayout: 0,
+    worstCaseLiability: 0,
+    housePosition: 0,
+    winningNumbers: "",
+    winningBonus: "",
+    resultSource: "",
+    settledAt: "",
+    bets: [],
+  };
+}
+
+function generateKenoDraws(count: number) {
+  const selectedGame = getSelectedKenoGame();
+
+  if (!selectedGame) {
+    alert("Select a Keno game first.");
+    return;
+  }
+
+  const intervalSeconds = Number(selectedGame.drawIntervalSeconds || 240);
+  const generatedDrawings: any[] = [];
+  let pendingDrawings = [...drawings];
+
+  for (let i = 1; i <= count; i++) {
+    const drawDateTime = new Date(Date.now() + intervalSeconds * i * 1000);
+    const drawing = createKenoDrawing(selectedGame, drawDateTime, pendingDrawings);
+
+    if (!pendingDrawings.some((existingDrawing: any) => existingDrawing.id === drawing.id)) {
+      generatedDrawings.push(drawing);
+      pendingDrawings = [...pendingDrawings, drawing];
+    }
+  }
+
+  if (generatedDrawings.length === 0) {
+    alert("No new Keno drawings generated.");
+    return;
+  }
+
+  setDrawings([...drawings, ...generatedDrawings]);
+  setLastGeneratedKenoDraw(generatedDrawings[generatedDrawings.length - 1]);
+}
+
+function generateTodaysKenoDraws() {
+  const selectedGame = getSelectedKenoGame();
+
+  if (!selectedGame) {
+    alert("Select a Keno game first.");
+    return;
+  }
+
+  const intervalSeconds = Number(selectedGame.drawIntervalSeconds || 240);
+  const timeZone = selectedGame.defaultTimeZone || "America/New_York";
+  const now = new Date();
+  const nowParts = getDatePartsInTimeZone(now, timeZone);
+  const tomorrowStart = new Date(`${nowParts.date}T00:00:00`);
+  tomorrowStart.setDate(tomorrowStart.getDate() + 1);
+  const secondsRemaining = Math.max(
+    0,
+    Math.floor((tomorrowStart.getTime() - now.getTime()) / 1000)
+  );
+  const drawCount = Math.floor(secondsRemaining / intervalSeconds);
+
+  generateKenoDraws(drawCount);
+}
+
+function getNextKenoDrawPreview() {
+  const selectedGame = getSelectedKenoGame();
+
+  if (!selectedGame) {
+    return null;
+  }
+
+  const intervalSeconds = Number(selectedGame.drawIntervalSeconds || 240);
+  return createKenoDrawing(
+    selectedGame,
+    new Date(Date.now() + intervalSeconds * 1000),
+    drawings
+  );
 }
 
 
@@ -1693,14 +4907,135 @@ function editGame(index: number) {
   });
   window.scrollTo({ top: 0, behavior: "smooth" });
 }
+
+function parseKenoWinningNumbers(value: any) {
+  const values = Array.isArray(value)
+    ? value
+    : String(value || "")
+        .split("-")
+        .map((part) => part.trim())
+        .filter(Boolean);
+
+  const numbers = values.map((number) => Number(number));
+
+  if (
+    values.length === 0 ||
+    numbers.some((number) => !Number.isInteger(number))
+  ) {
+    return [];
+  }
+
+  return numbers;
+}
+
+function calculateKenoDrawMetrics({
+  drawing,
+  game,
+  winningNumbers,
+  bullseyeNumber,
+}: {
+  drawing: any;
+  game: any;
+  winningNumbers: any;
+  bullseyeNumber?: any;
+}): KenoDrawMetrics {
+  const numbers = parseKenoWinningNumbers(winningNumbers);
+
+  if (numbers.length === 0) {
+    throw new Error("Keno winning numbers must contain at least one number.");
+  }
+
+  const parsedBullseyeNumber = Number(bullseyeNumber || 0);
+  const resolvedBullseyeNumber =
+    game?.bullseyeEnabled
+      ? Number.isInteger(parsedBullseyeNumber) && parsedBullseyeNumber > 0
+        ? parsedBullseyeNumber
+        : numbers[0]
+      : null;
+  const drawingId = String(drawing.id || drawing.drawCode || "");
+  const drawSum = numbers.reduce((sum, number) => sum + number, 0);
+  const lowCount = numbers.filter((number) => number >= 1 && number <= 40).length;
+  const highCount = numbers.filter((number) => number >= 41 && number <= 80).length;
+  const dragonDigit = Math.floor(drawSum / 10) % 10;
+  const tigerDigit = drawSum % 10;
+  const dragonTigerResult =
+    dragonDigit > tigerDigit
+      ? "dragon"
+      : tigerDigit > dragonDigit
+        ? "tiger"
+        : "tie";
+  const upDownResult =
+    lowCount > highCount
+      ? "up"
+      : highCount > lowCount
+        ? "down"
+        : "tie";
+
+  return {
+    id: `METRICS-${drawingId}`,
+    drawingId,
+    gameId: String(drawing.gameId || game?.externalId || game?.name || ""),
+    drawSum,
+    oddCount: numbers.filter((number) => number % 2 !== 0).length,
+    evenCount: numbers.filter((number) => number % 2 === 0).length,
+    lowCount,
+    highCount,
+    firstHalfCount: numbers.filter((number) => number >= 1 && number <= 40).length,
+    secondHalfCount: numbers.filter((number) => number >= 41 && number <= 80).length,
+    minDrawnNumber: Math.min(...numbers),
+    maxDrawnNumber: Math.max(...numbers),
+    dragonDigit,
+    tigerDigit,
+    dragonTigerResult,
+    upDownResult,
+    bullseyeNumber: resolvedBullseyeNumber,
+    woodCount: numbers.filter((number) => number >= 1 && number <= 16).length,
+    fireCount: numbers.filter((number) => number >= 17 && number <= 32).length,
+    earthCount: numbers.filter((number) => number >= 33 && number <= 48).length,
+    metalCount: numbers.filter((number) => number >= 49 && number <= 64).length,
+    waterCount: numbers.filter((number) => number >= 65 && number <= 80).length,
+    createdAt: new Date().toISOString(),
+  };
+}
+
+function saveKenoDrawMetrics(metrics: KenoDrawMetrics) {
+  setKenoDrawMetrics((prev) => [
+    ...prev.filter((item) => item.drawingId !== metrics.drawingId),
+    metrics,
+  ]);
+}
+
 function updateDrawingResult(index: number, field: string, value: string) {
+  const targetDrawing = drawings[index];
+  const updatedDrawing = targetDrawing
+    ? {
+        ...targetDrawing,
+        [field]: value,
+      }
+    : null;
+
+  if (
+    updatedDrawing?.game?.gameType === "keno_style" &&
+    updatedDrawing.winningNumbers
+  ) {
+    try {
+      saveKenoDrawMetrics(
+        calculateKenoDrawMetrics({
+          drawing: updatedDrawing,
+          game: updatedDrawing.game,
+          winningNumbers: updatedDrawing.winningNumbers,
+          bullseyeNumber: updatedDrawing.winningBonus,
+        })
+      );
+    } catch (error) {
+      console.error("Keno draw metrics calculation failed:", error);
+    }
+  }
+
   setDrawings(
     drawings.map((drawing: any, drawingIndex: number) =>
       drawingIndex === index
-        ? {
-            ...drawing,
-            [field]: value,
-          }
+        ? updatedDrawing || drawing
         : drawing
     )
   );
@@ -2577,9 +5912,50 @@ function clearAllLocalData() {
   setGames([]);
   setDrawings([]);
   setPayTables([]);
+  setWagerTypes([]);
+  setWagerOptions([]);
+  setPlayerAccounts([]);
+  setLedgerTransactions([]);
+  setTickets([]);
+  setTicketLines([]);
+  setExpandedTicketIds([]);
+  setDraftTicketLines([]);
+  setSettlementRuns([]);
+  setSettlementRecords([]);
+  setExpandedSettlementRunIds([]);
+  setSettlementForm({
+    drawingId: "",
+    notes: "",
+  });
+  setTicketForm({
+    accountId: "",
+    marketId: "",
+    gameId: "",
+    drawingId: "",
+    fundingType: "cash",
+    notes: "",
+  });
+  setTicketLineForm({
+    wagerTypeId: "",
+    wagerOptionId: "",
+    selectedNumbers: "",
+    stake: "",
+    potentialPayout: "",
+  });
+  setLedgerForm({
+    accountId: "",
+    category: "accounting",
+    transactionType: "deposit",
+    amount: "",
+    description: "",
+    referenceId: "",
+    createdBy: "",
+  });
   setExpandedDrawingIds([]);
   setEditingGameIndex(null);
   setEditingDrawingIndex(null);
+  setEditingWagerOptionId(null);
+  setEditingPlayerAccountId(null);
 
   alert("All local demo data cleared.");
 }
@@ -2853,6 +6229,45 @@ function generateDemoData() {
   setGames(demoGames);
   setDrawings(demoDrawings);
   setPayTables([]);
+  setWagerTypes([]);
+  setWagerOptions([]);
+  setPlayerAccounts([]);
+  setLedgerTransactions([]);
+  setTickets([]);
+  setTicketLines([]);
+  setExpandedTicketIds([]);
+  setDraftTicketLines([]);
+  setSettlementRuns([]);
+  setSettlementRecords([]);
+  setExpandedSettlementRunIds([]);
+  setSettlementForm({
+    drawingId: "",
+    notes: "",
+  });
+  setTicketForm({
+    accountId: "",
+    marketId: "",
+    gameId: "",
+    drawingId: "",
+    fundingType: "cash",
+    notes: "",
+  });
+  setTicketLineForm({
+    wagerTypeId: "",
+    wagerOptionId: "",
+    selectedNumbers: "",
+    stake: "",
+    potentialPayout: "",
+  });
+  setLedgerForm({
+    accountId: "",
+    category: "accounting",
+    transactionType: "deposit",
+    amount: "",
+    description: "",
+    referenceId: "",
+    createdBy: "",
+  });
   setExpandedDrawingIds([]);
   setExpandedGameIds([]);
   setEditingGameIndex(null);
@@ -2970,8 +6385,15 @@ function importLocalDataJSON(event: React.ChangeEvent<HTMLInputElement>) {
     { label: "Drawings", value: "drawings" },
     { label: "Reports", value: "reports" },
     { label: "Mock Betting", value: "mockBetting" },
+    { label: "Wager Types", value: "wagerTypes" },
     { label: "Pay Tables", value: "payTables" },
-    { label: "Hot Spot Admin", value: "hotspotAdmin" },
+    { label: "Keno Operations", value: "hotspotAdmin" },
+    { label: "Markets", value: "markets" },
+    { label: "Accounts", value: "accounts" },
+    { label: "Tickets", value: "tickets" },
+    { label: "Settlement", value: "settlement" },
+    { label: "Financial Ledger", value: "financialLedger" },
+    { label: "Admin Access", value: "adminAccess" },
     { label: "Utilities", value: "utilities" },
   ].map((tab) => (
     <button
@@ -4916,6 +8338,472 @@ Export Risk Exposure </button>
 		</section>
   </>
 	)}
+{activeTab === "wagerTypes" && (
+  <>
+    <section className="mt-8 rounded-xl bg-white p-6 shadow">
+      <h2 className="mb-4 text-xl font-semibold">Wager Types</h2>
+
+      <form onSubmit={saveWagerType} className="grid gap-4">
+        <div className="grid gap-4 md:grid-cols-3">
+          <label className="grid gap-1">
+            <span className="font-medium">Game</span>
+            <select
+              value={wagerTypeForm.gameId}
+              onChange={(e) =>
+                setWagerTypeForm({
+                  ...wagerTypeForm,
+                  gameId: e.target.value,
+                  payTableId: "",
+                })
+              }
+              className="rounded border p-2 text-gray-900"
+              required
+            >
+              <option value="">Select a Keno game</option>
+              {getKenoGames().map((game: any) => {
+                const gameIndex = games.findIndex(
+                  (createdGame: any) => createdGame === game
+                );
+
+                return (
+                  <option key={getGameLocalId(game, gameIndex)} value={getGameLocalId(game, gameIndex)}>
+                    {game.name}
+                  </option>
+                );
+              })}
+            </select>
+          </label>
+
+          <label className="grid gap-1">
+            <span className="font-medium">Wager Type Name</span>
+            <input
+              value={wagerTypeForm.name}
+              onChange={(e) =>
+                setWagerTypeForm({
+                  ...wagerTypeForm,
+                  name: e.target.value,
+                })
+              }
+              placeholder="Example: Standard Spots"
+              className="rounded border p-2 text-gray-900"
+              required
+            />
+          </label>
+
+          <label className="grid gap-1">
+            <span className="font-medium">Wager Type Code</span>
+            <input
+              value={wagerTypeForm.code}
+              onChange={(e) =>
+                setWagerTypeForm({
+                  ...wagerTypeForm,
+                  code: e.target.value,
+                })
+              }
+              placeholder="Example: standard_spots"
+              className="rounded border p-2 text-gray-900"
+              required
+            />
+          </label>
+        </div>
+
+        <div className="grid gap-4 md:grid-cols-3">
+          <label className="grid gap-1">
+            <span className="font-medium">Settlement Method</span>
+            <select
+              value={wagerTypeForm.settlementMethod}
+              onChange={(e) =>
+                setWagerTypeForm({
+                  ...wagerTypeForm,
+                  settlementMethod: e.target.value,
+                  metricKey: "",
+                  comparisonOperator: "",
+                  thresholdValue: "",
+                  payTableId: "",
+                })
+              }
+              className="rounded border p-2 text-gray-900"
+              required
+            >
+              <option value="hit_count">Hit Count</option>
+              <option value="hit_count_bullseye">Hit Count + Bullseye</option>
+              <option value="metric_comparison">Metric Comparison</option>
+              <option value="metric_threshold">Metric Threshold</option>
+              <option value="element_count">Element Count</option>
+              <option value="dragon_tiger">Dragon / Tiger</option>
+              <option value="selection_match">Selection Match</option>
+            </select>
+          </label>
+
+          {methodNeedsMetricKey(wagerTypeForm.settlementMethod) && (
+            <label className="grid gap-1">
+              <span className="font-medium">Metric Key</span>
+              <select
+                value={wagerTypeForm.metricKey}
+                onChange={(e) =>
+                  setWagerTypeForm({
+                    ...wagerTypeForm,
+                    metricKey: e.target.value,
+                  })
+                }
+                className="rounded border p-2 text-gray-900"
+                required
+              >
+                <option value="">Select metric</option>
+                {KENO_METRIC_KEYS.map((metricKey) => (
+                  <option key={metricKey} value={metricKey}>
+                    {metricKey}
+                  </option>
+                ))}
+              </select>
+            </label>
+          )}
+
+          {methodNeedsOperator(wagerTypeForm.settlementMethod) && (
+            <label className="grid gap-1">
+              <span className="font-medium">Comparison Operator</span>
+              <select
+                value={wagerTypeForm.comparisonOperator}
+                onChange={(e) =>
+                  setWagerTypeForm({
+                    ...wagerTypeForm,
+                    comparisonOperator: e.target.value,
+                  })
+                }
+                className="rounded border p-2 text-gray-900"
+                required
+              >
+                <option value="">Select operator</option>
+                {COMPARISON_OPERATORS.map((operator) => (
+                  <option key={operator} value={operator}>
+                    {operator}
+                  </option>
+                ))}
+              </select>
+            </label>
+          )}
+
+          {methodNeedsThreshold(wagerTypeForm.settlementMethod) && (
+            <label className="grid gap-1">
+              <span className="font-medium">Threshold Value</span>
+              <input
+                value={wagerTypeForm.thresholdValue}
+                onChange={(e) =>
+                  setWagerTypeForm({
+                    ...wagerTypeForm,
+                    thresholdValue: e.target.value,
+                  })
+                }
+                placeholder="Example: 810"
+                className="rounded border p-2 text-gray-900"
+                required
+              />
+            </label>
+          )}
+
+          {methodUsesPayTable(wagerTypeForm.settlementMethod) && (
+            <label className="grid gap-1">
+              <span className="font-medium">Pay Table</span>
+              <select
+                value={wagerTypeForm.payTableId}
+                onChange={(e) =>
+                  setWagerTypeForm({
+                    ...wagerTypeForm,
+                    payTableId: e.target.value,
+                  })
+                }
+                className="rounded border p-2 text-gray-900"
+              >
+                <option value="">No pay table assigned</option>
+                {getPayTablesForGame(wagerTypeForm.gameId).map((payTable) => (
+                  <option key={payTable.id} value={payTable.id}>
+                    {payTable.name}
+                  </option>
+                ))}
+              </select>
+            </label>
+          )}
+        </div>
+
+        <label className="flex items-center gap-2 text-sm font-medium text-gray-700">
+          <input
+            type="checkbox"
+            checked={wagerTypeForm.active}
+            onChange={(e) =>
+              setWagerTypeForm({
+                ...wagerTypeForm,
+                active: e.target.checked,
+              })
+            }
+          />
+          Active
+        </label>
+
+        <div className="flex flex-wrap gap-2">
+          <button className="rounded bg-blue-700 px-4 py-2 font-semibold text-white hover:bg-blue-800">
+            {editingWagerTypeId ? "Update Wager Type" : "Save Wager Type"}
+          </button>
+          <button
+            type="button"
+            onClick={addDefaultKenoWagerTypes}
+            className="rounded bg-purple-700 px-4 py-2 font-semibold text-white hover:bg-purple-800"
+          >
+            Add Default Keno Wager Types
+          </button>
+          <button
+            type="button"
+            onClick={resetWagerTypeForm}
+            className="rounded bg-gray-200 px-4 py-2 font-semibold text-gray-700 hover:bg-gray-300"
+          >
+            Reset
+          </button>
+          {editingWagerTypeId && (
+            <button
+              type="button"
+              onClick={resetWagerTypeForm}
+              className="rounded bg-slate-200 px-4 py-2 font-semibold text-slate-700 hover:bg-slate-300"
+            >
+              Cancel Edit
+            </button>
+          )}
+        </div>
+      </form>
+    </section>
+
+    <section className="mt-8 rounded-xl bg-white p-6 shadow">
+      <h2 className="mb-4 text-xl font-semibold">Created Wager Types</h2>
+
+      {wagerTypes.length === 0 ? (
+        <p className="text-sm text-gray-500">No wager types created yet.</p>
+      ) : (
+        <div className="overflow-x-auto">
+          <table className="w-full text-left text-sm">
+            <thead className="border-b text-xs uppercase text-gray-500">
+              <tr>
+                <th className="py-2 pr-3">Game Name</th>
+                <th className="py-2 pr-3">Wager Type</th>
+                <th className="py-2 pr-3">Option Count</th>
+                <th className="py-2 pr-3">Settlement Method</th>
+                <th className="py-2 pr-3">Pay Table</th>
+                <th className="py-2 pr-3">Active</th>
+                <th className="min-w-[130px] py-2 pr-3">Actions</th>
+              </tr>
+            </thead>
+            <tbody>
+              {wagerTypes.map((wagerType) => {
+                const game = games.find(
+                  (createdGame: any, index: number) =>
+                    getGameLocalId(createdGame, index) === wagerType.gameId
+                );
+                const payTable = payTables.find(
+                  (createdPayTable) => createdPayTable.id === wagerType.payTableId
+                );
+                const optionCount = getOptionsForWagerType(wagerType.id).length;
+
+                return (
+                  <tr key={wagerType.id} className="border-b last:border-0">
+                    <td className="py-2 pr-3">{game?.name || wagerType.gameId}</td>
+                    <td className="py-2 pr-3">
+                      <div>
+                        <p className="font-medium">{wagerType.name}</p>
+                        <p className="text-xs text-gray-500">{wagerType.code}</p>
+                      </div>
+                    </td>
+                    <td className="py-2 pr-3">{optionCount}</td>
+                    <td className="py-2 pr-3">{wagerType.settlementMethod}</td>
+                    <td className="py-2 pr-3">{payTable?.name || ""}</td>
+                    <td className="py-2 pr-3">
+                      {wagerType.active ? "Active" : "Inactive"}
+                    </td>
+                    <td className="min-w-[130px] py-2 pr-3">
+                      <div className="flex flex-nowrap items-center gap-2">
+                        <button
+                          type="button"
+                          onClick={() => editWagerType(wagerType)}
+                          className="rounded-md bg-slate-700 px-3 py-1 text-xs font-semibold text-white hover:bg-slate-800"
+                        >
+                          Edit
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => deleteWagerType(wagerType.id)}
+                          className="rounded-md bg-red-700 px-3 py-1 text-xs font-semibold text-white hover:bg-red-800"
+                        >
+                          Delete
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </section>
+
+    <section className="mt-8 rounded-xl bg-white p-6 shadow">
+      <h2 className="mb-4 text-xl font-semibold">Wager Options</h2>
+
+      <form onSubmit={saveWagerOption} className="mb-6 grid gap-4">
+        <div className="grid gap-4 md:grid-cols-3">
+          <label className="grid gap-1">
+            <span className="font-medium">Wager Type</span>
+            <select
+              value={wagerOptionForm.wagerTypeId}
+              onChange={(e) =>
+                setWagerOptionForm({
+                  ...wagerOptionForm,
+                  wagerTypeId: e.target.value,
+                })
+              }
+              className="rounded border p-2 text-gray-900"
+              required
+            >
+              <option value="">Select wager type</option>
+              {wagerTypes.map((wagerType) => {
+                const game = games.find(
+                  (createdGame: any, index: number) =>
+                    getGameLocalId(createdGame, index) === wagerType.gameId
+                );
+
+                return (
+                  <option key={wagerType.id} value={wagerType.id}>
+                    {game?.name || wagerType.gameId} - {wagerType.name}
+                  </option>
+                );
+              })}
+            </select>
+          </label>
+
+          <label className="grid gap-1">
+            <span className="font-medium">Option Name</span>
+            <input
+              value={wagerOptionForm.name}
+              onChange={(e) =>
+                setWagerOptionForm({
+                  ...wagerOptionForm,
+                  name: e.target.value,
+                })
+              }
+              placeholder="Example: Dragon"
+              className="rounded border p-2 text-gray-900"
+              required
+            />
+          </label>
+
+          <label className="grid gap-1">
+            <span className="font-medium">Option Code</span>
+            <input
+              value={wagerOptionForm.code}
+              onChange={(e) =>
+                setWagerOptionForm({
+                  ...wagerOptionForm,
+                  code: e.target.value,
+                })
+              }
+              placeholder="Example: dragon"
+              className="rounded border p-2 text-gray-900"
+              required
+            />
+          </label>
+        </div>
+
+        <label className="flex items-center gap-2 text-sm font-medium text-gray-700">
+          <input
+            type="checkbox"
+            checked={wagerOptionForm.active}
+            onChange={(e) =>
+              setWagerOptionForm({
+                ...wagerOptionForm,
+                active: e.target.checked,
+              })
+            }
+          />
+          Active
+        </label>
+
+        <div className="flex flex-wrap gap-2">
+          <button className="rounded bg-blue-700 px-4 py-2 font-semibold text-white hover:bg-blue-800">
+            {editingWagerOptionId ? "Update Option" : "Add Option"}
+          </button>
+          <button
+            type="button"
+            onClick={resetWagerOptionForm}
+            className="rounded bg-gray-200 px-4 py-2 font-semibold text-gray-700 hover:bg-gray-300"
+          >
+            Reset
+          </button>
+          {editingWagerOptionId && (
+            <button
+              type="button"
+              onClick={resetWagerOptionForm}
+              className="rounded bg-slate-200 px-4 py-2 font-semibold text-slate-700 hover:bg-slate-300"
+            >
+              Cancel Edit
+            </button>
+          )}
+        </div>
+      </form>
+
+      {wagerOptions.length === 0 ? (
+        <p className="text-sm text-gray-500">No wager options created yet.</p>
+      ) : (
+        <div className="overflow-x-auto">
+          <table className="w-full text-left text-sm">
+            <thead className="border-b text-xs uppercase text-gray-500">
+              <tr>
+                <th className="py-2 pr-3">Wager Type</th>
+                <th className="py-2 pr-3">Option</th>
+                <th className="py-2 pr-3">Code</th>
+                <th className="py-2 pr-3">Active</th>
+                <th className="min-w-[130px] py-2 pr-3">Actions</th>
+              </tr>
+            </thead>
+            <tbody>
+              {wagerOptions.map((option) => {
+                const wagerType = wagerTypes.find(
+                  (createdWagerType) => createdWagerType.id === option.wagerTypeId
+                );
+
+                return (
+                  <tr key={option.id} className="border-b last:border-0">
+                    <td className="py-2 pr-3">
+                      {wagerType?.name || option.wagerTypeId}
+                    </td>
+                    <td className="py-2 pr-3">{option.name}</td>
+                    <td className="py-2 pr-3">{option.code}</td>
+                    <td className="py-2 pr-3">
+                      {option.active ? "Active" : "Inactive"}
+                    </td>
+                    <td className="min-w-[130px] py-2 pr-3">
+                      <div className="flex flex-nowrap items-center gap-2">
+                        <button
+                          type="button"
+                          onClick={() => editWagerOption(option)}
+                          className="rounded-md bg-slate-700 px-3 py-1 text-xs font-semibold text-white hover:bg-slate-800"
+                        >
+                          Edit
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => deleteWagerOption(option.id)}
+                          className="rounded-md bg-red-700 px-3 py-1 text-xs font-semibold text-white hover:bg-red-800"
+                        >
+                          Delete
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </section>
+  </>
+)}
 {activeTab === "payTables" && (
   <>
     <section className="mt-8 rounded-xl bg-white p-6 shadow">
@@ -4991,7 +8879,10 @@ Export Risk Exposure </button>
           </div>
 
           {payTableRows.map((row) => (
-            <div key={row.id} className="grid gap-3 rounded border bg-white p-3 md:grid-cols-5">
+            <div
+              key={row.id}
+              className="grid grid-cols-1 items-end gap-4 rounded border bg-white p-4 md:grid-cols-[1fr_1fr_1fr_1fr_auto]"
+            >
               <label className="grid gap-1">
                 <span className="text-sm font-medium">Spot Count</span>
                 <input
@@ -4999,7 +8890,7 @@ Export Risk Exposure </button>
                   onChange={(e) =>
                     updatePayTableRow(row.id, "spotCount", e.target.value)
                   }
-                  className="rounded border p-2 text-gray-900"
+                  className="h-10 w-full rounded border p-2 text-gray-900"
                   required
                 />
               </label>
@@ -5011,24 +8902,27 @@ Export Risk Exposure </button>
                   onChange={(e) =>
                     updatePayTableRow(row.id, "hitCount", e.target.value)
                   }
-                  className="rounded border p-2 text-gray-900"
+                  className="h-10 w-full rounded border p-2 text-gray-900"
                   required
                 />
               </label>
 
-              <label className="flex items-center gap-2 text-sm font-medium text-gray-700">
-                <input
-                  type="checkbox"
-                  checked={row.bullseyeRequired}
-                  onChange={(e) =>
-                    updatePayTableRow(
-                      row.id,
-                      "bullseyeRequired",
-                      e.target.checked
-                    )
-                  }
-                />
-                Bullseye Required
+              <label className="grid gap-1">
+                <span className="text-sm font-medium">Bullseye Required</span>
+                <span className="flex h-10 items-center gap-2 rounded border bg-white px-3 text-sm font-medium text-gray-700">
+                  <input
+                    type="checkbox"
+                    checked={row.bullseyeRequired}
+                    onChange={(e) =>
+                      updatePayTableRow(
+                        row.id,
+                        "bullseyeRequired",
+                        e.target.checked
+                      )
+                    }
+                  />
+                  Required
+                </span>
               </label>
 
               <label className="grid gap-1">
@@ -5038,7 +8932,7 @@ Export Risk Exposure </button>
                   onChange={(e) =>
                     updatePayTableRow(row.id, "payout", e.target.value)
                   }
-                  className="rounded border p-2 text-gray-900"
+                  className="h-10 w-full rounded border p-2 text-gray-900"
                   required
                 />
               </label>
@@ -5047,7 +8941,7 @@ Export Risk Exposure </button>
                 <button
                   type="button"
                   onClick={() => removePayTableRow(row.id)}
-                  className="rounded-md bg-red-700 px-3 py-1.5 text-sm font-semibold text-white hover:bg-red-800"
+                  className="h-10 w-full rounded-md bg-red-700 px-3 text-sm font-semibold text-white hover:bg-red-800 md:w-auto"
                 >
                   Remove
                 </button>
@@ -5132,26 +9026,2865 @@ Export Risk Exposure </button>
 {activeTab === "hotspotAdmin" && (
   <>
     <section className="mt-8 rounded-xl bg-white p-6 shadow">
-      <h2 className="mb-4 text-xl font-semibold">Hot Spot Profiles</h2>
+      <h2 className="mb-4 text-xl font-semibold">Keno Operations</h2>
 
-      {hotspotProfiles.length === 0 ? (
-        <p className="text-sm text-gray-500">No Hot Spot profiles found.</p>
+      <div className="grid gap-4">
+        <div className="rounded border bg-gray-50 p-4">
+          <h3 className="mb-3 font-semibold text-gray-900">Draw Generator</h3>
+
+          <div className="grid gap-4 md:grid-cols-2">
+            <label className="grid gap-1">
+              <span className="font-medium">Select Keno Game</span>
+              <select
+                value={selectedKenoGameId}
+                onChange={(e) => setSelectedKenoGameId(e.target.value)}
+                className="rounded border p-2 text-gray-900"
+              >
+                <option value="">Select a Keno game</option>
+                {getKenoGames().map((game: any) => {
+                  const gameIndex = games.findIndex(
+                    (createdGame: any) => createdGame === game
+                  );
+
+                  return (
+                    <option key={getGameLocalId(game, gameIndex)} value={getGameLocalId(game, gameIndex)}>
+                      {game.name}
+                    </option>
+                  );
+                })}
+              </select>
+            </label>
+
+            <div className="grid gap-2 rounded border bg-white p-3 text-sm text-gray-700">
+              <p>
+                <span className="font-semibold">Draw Interval:</span>{" "}
+                {getSelectedKenoGame()?.drawIntervalSeconds
+                  ? `${getSelectedKenoGame()?.drawIntervalSeconds} seconds`
+                  : selectedKenoGameId
+                    ? "240 seconds"
+                    : "Select a game"}
+              </p>
+              <p>
+                <span className="font-semibold">Draw ID Prefix:</span>{" "}
+                {getSelectedKenoGame()?.drawIdPrefix || "Select a game"}
+              </p>
+              <p>
+                <span className="font-semibold">Last Generated Draw:</span>{" "}
+                {lastGeneratedKenoDraw?.drawCode || "None"}
+              </p>
+              <p>
+                <span className="font-semibold">Next Draw Preview:</span>{" "}
+                {getNextKenoDrawPreview()?.drawCode || "Select a game"}
+              </p>
+            </div>
+          </div>
+
+          <div className="mt-4 flex flex-wrap gap-2">
+            <button
+              type="button"
+              onClick={() => generateKenoDraws(1)}
+              className="rounded-md bg-blue-700 px-3 py-1.5 text-sm font-semibold text-white hover:bg-blue-800"
+            >
+              Generate Next Draw
+            </button>
+            <button
+              type="button"
+              onClick={() => generateKenoDraws(10)}
+              className="rounded-md bg-indigo-700 px-3 py-1.5 text-sm font-semibold text-white hover:bg-indigo-800"
+            >
+              Generate Next 10 Draws
+            </button>
+            <button
+              type="button"
+              onClick={generateTodaysKenoDraws}
+              className="rounded-md bg-purple-700 px-3 py-1.5 text-sm font-semibold text-white hover:bg-purple-800"
+            >
+              Generate Today's Draws
+            </button>
+          </div>
+        </div>
+
+        <div className="rounded border bg-gray-50 p-4">
+          <h3 className="mb-3 font-semibold text-gray-900">Keno Draw Metrics</h3>
+
+          {kenoDrawMetrics.length === 0 ? (
+            <p className="text-sm text-gray-500">
+              No Keno draw metrics calculated yet.
+            </p>
+          ) : (
+            <div className="grid gap-3">
+              {kenoDrawMetrics.map((metrics) => {
+                const drawing = drawings.find(
+                  (createdDrawing: any) =>
+                    String(createdDrawing.id || createdDrawing.drawCode || "") ===
+                    metrics.drawingId
+                );
+
+                return (
+                  <div key={metrics.id} className="rounded border bg-white p-4 text-sm text-gray-700">
+                    <div className="mb-2">
+                      <p className="font-semibold text-gray-900">
+                        {drawing?.drawCode || metrics.drawingId}
+                      </p>
+                      <p className="text-gray-500">
+                        {drawing?.game?.name || metrics.gameId}
+                      </p>
+                    </div>
+
+                    <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
+                      <p>
+                        <span className="font-semibold">Sum:</span>{" "}
+                        {metrics.drawSum}
+                      </p>
+                      <p>
+                        <span className="font-semibold">Odd / Even:</span>{" "}
+                        {metrics.oddCount} / {metrics.evenCount}
+                      </p>
+                      <p>
+                        <span className="font-semibold">Low Count:</span>{" "}
+                        {metrics.lowCount}
+                      </p>
+                      <p>
+                        <span className="font-semibold">High Count:</span>{" "}
+                        {metrics.highCount}
+                      </p>
+                      <p>
+                        <span className="font-semibold">Up/Down Result:</span>{" "}
+                        {metrics.upDownResult.toUpperCase()}
+                      </p>
+                      <p>
+                        <span className="font-semibold">
+                          First Half / Second Half:
+                        </span>{" "}
+                        {metrics.firstHalfCount} / {metrics.secondHalfCount}
+                      </p>
+                      <p>
+                        <span className="font-semibold">Dragon Digit:</span>{" "}
+                        {metrics.dragonDigit}
+                      </p>
+                      <p>
+                        <span className="font-semibold">Tiger Digit:</span>{" "}
+                        {metrics.tigerDigit}
+                      </p>
+                      <p>
+                        <span className="font-semibold">
+                          Dragon/Tiger Result:
+                        </span>{" "}
+                        {metrics.dragonTigerResult.toUpperCase()}
+                      </p>
+                      <p>
+                        <span className="font-semibold">Bullseye:</span>{" "}
+                        {metrics.bullseyeNumber || "N/A"}
+                      </p>
+                    </div>
+
+                    <p className="mt-2">
+                      <span className="font-semibold">Element Counts:</span>{" "}
+                      Wood {metrics.woodCount}, Fire {metrics.fireCount}, Earth{" "}
+                      {metrics.earthCount}, Metal {metrics.metalCount}, Water{" "}
+                      {metrics.waterCount}
+                    </p>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+      </div>
+    </section>
+  </>
+)}
+{activeTab === "tickets" && (
+  <>
+    <section className="mt-8 rounded-xl bg-white p-6 shadow">
+      <h2 className="mb-4 text-xl font-semibold">Tickets</h2>
+
+      {(() => {
+        const pendingTickets = tickets.filter((ticket) => ticket.status === "pending");
+        const acceptedTickets = tickets.filter((ticket) => ticket.status === "accepted");
+        const settledTickets = tickets.filter((ticket) => ticket.status === "settled");
+        const voidTickets = tickets.filter((ticket) => ticket.status === "void");
+        const totalPendingExposure = playerAccounts.reduce(
+          (total, account) => total + calculatePendingExposureForAccount(account.id),
+          0
+        );
+
+        return (
+          <div className="grid gap-6">
+            <section className="rounded border bg-gray-50 p-4">
+              <h3 className="mb-3 font-semibold text-gray-900">Ticket Summary</h3>
+              <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-6">
+                <div className="rounded border bg-white p-3">
+                  <p className="text-xs uppercase text-gray-500">Total Tickets</p>
+                  <p className="text-lg font-semibold">{tickets.length}</p>
+                </div>
+                <div className="rounded border bg-white p-3">
+                  <p className="text-xs uppercase text-gray-500">Pending</p>
+                  <p className="text-lg font-semibold">{pendingTickets.length}</p>
+                </div>
+                <div className="rounded border bg-white p-3">
+                  <p className="text-xs uppercase text-gray-500">Accepted</p>
+                  <p className="text-lg font-semibold">{acceptedTickets.length}</p>
+                </div>
+                <div className="rounded border bg-white p-3">
+                  <p className="text-xs uppercase text-gray-500">Settled</p>
+                  <p className="text-lg font-semibold">{settledTickets.length}</p>
+                </div>
+                <div className="rounded border bg-white p-3">
+                  <p className="text-xs uppercase text-gray-500">Void</p>
+                  <p className="text-lg font-semibold">{voidTickets.length}</p>
+                </div>
+                <div className="rounded border bg-white p-3">
+                  <p className="text-xs uppercase text-gray-500">
+                    Pending Exposure
+                  </p>
+                  <p className="text-lg font-semibold">
+                    {formatMoney(totalPendingExposure)}
+                  </p>
+                </div>
+              </div>
+            </section>
+
+            <section className="rounded border bg-gray-50 p-4">
+              <h3 className="mb-3 font-semibold text-gray-900">
+                Create Test Ticket
+              </h3>
+
+              <form onSubmit={saveTestTicket} className="grid gap-4">
+                <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3">
+                  <label className="grid gap-1">
+                    <span className="text-sm font-medium">Account</span>
+                    <select
+                      value={ticketForm.accountId}
+                      onChange={(e) =>
+                        setTicketForm({
+                          ...ticketForm,
+                          accountId: e.target.value,
+                        })
+                      }
+                      className="h-10 w-full rounded border p-2 text-gray-900"
+                      required
+                    >
+                      <option value="">Select account</option>
+                      {playerAccounts.map((account) => (
+                        <option key={account.id} value={account.id}>
+                          {account.displayName} ({account.username})
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+
+                  <label className="grid gap-1">
+                    <span className="text-sm font-medium">Market</span>
+                    <select
+                      value={ticketForm.marketId}
+                      onChange={(e) =>
+                        setTicketForm({
+                          ...ticketForm,
+                          marketId: e.target.value,
+                        })
+                      }
+                      className="h-10 w-full rounded border p-2 text-gray-900"
+                    >
+                      <option value="">No market assigned</option>
+                      {markets.map((market) => (
+                        <option key={market.id} value={market.id}>
+                          {market.name} ({market.code})
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+
+                  <label className="grid gap-1">
+                    <span className="text-sm font-medium">Game</span>
+                    <select
+                      value={ticketForm.gameId}
+                      onChange={(e) =>
+                        setTicketForm({
+                          ...ticketForm,
+                          gameId: e.target.value,
+                          drawingId: "",
+                        })
+                      }
+                      className="h-10 w-full rounded border p-2 text-gray-900"
+                      required
+                    >
+                      <option value="">Select game</option>
+                      {games.map((game: any, index: number) => (
+                        <option key={getGameLocalId(game, index)} value={getGameLocalId(game, index)}>
+                          {game.name}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+
+                  <label className="grid gap-1">
+                    <span className="text-sm font-medium">Drawing</span>
+                    <select
+                      value={ticketForm.drawingId}
+                      onChange={(e) =>
+                        setTicketForm({
+                          ...ticketForm,
+                          drawingId: e.target.value,
+                        })
+                      }
+                      className="h-10 w-full rounded border p-2 text-gray-900"
+                      required
+                    >
+                      <option value="">Select drawing</option>
+                      {drawings
+                        .filter((drawing: any) => {
+                          if (!ticketForm.gameId) return true;
+                          return (
+                            drawing.gameId === ticketForm.gameId ||
+                            getGameLocalId(
+                              drawing.game,
+                              games.findIndex(
+                                (createdGame: any) => createdGame === drawing.game
+                              )
+                            ) === ticketForm.gameId
+                          );
+                        })
+                        .map((drawing: any, index: number) => (
+                          <option key={drawing.id || index} value={drawing.id}>
+                            {drawing.drawCode || drawing.id}
+                          </option>
+                        ))}
+                    </select>
+                  </label>
+
+                  <label className="grid gap-1">
+                    <span className="text-sm font-medium">Funding Type</span>
+                    <select
+                      value={ticketForm.fundingType}
+                      onChange={(e) =>
+                        setTicketForm({
+                          ...ticketForm,
+                          fundingType: e.target.value as TicketFundingType,
+                        })
+                      }
+                      className="h-10 w-full rounded border p-2 text-gray-900"
+                      required
+                    >
+                      <option value="cash">Cash</option>
+                      <option value="credit">Credit</option>
+                      <option value="freeplay">Free Play</option>
+                    </select>
+                  </label>
+
+                  <label className="grid gap-1">
+                    <span className="text-sm font-medium">Notes</span>
+                    <input
+                      value={ticketForm.notes}
+                      onChange={(e) =>
+                        setTicketForm({
+                          ...ticketForm,
+                          notes: e.target.value,
+                        })
+                      }
+                      className="h-10 w-full rounded border p-2 text-gray-900"
+                    />
+                  </label>
+                </div>
+
+                <div className="rounded border bg-white p-4">
+                  <h4 className="mb-3 font-semibold text-gray-900">
+                    Ticket Line Builder
+                  </h4>
+
+                  <div className="grid grid-cols-1 items-end gap-4 md:grid-cols-2 lg:grid-cols-[minmax(0,1.35fr)_repeat(4,minmax(0,1fr))_auto]">
+                    <label className="grid gap-1">
+                      <span className="text-sm font-medium">Wager Type</span>
+                      <select
+                        value={ticketLineForm.wagerTypeId}
+                        onChange={(e) =>
+                          setTicketLineForm({
+                            ...ticketLineForm,
+                            wagerTypeId: e.target.value,
+                            wagerOptionId: "",
+                          })
+                        }
+                        className="h-10 w-full rounded border p-2 text-gray-900"
+                      >
+                        <option value="">Select wager type</option>
+                        {wagerTypes.map((wagerType) => (
+                          <option key={wagerType.id} value={wagerType.id}>
+                            {wagerType.name}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+
+                    <label className="grid gap-1">
+                      <span className="text-sm font-medium">Wager Option</span>
+                      <select
+                        value={ticketLineForm.wagerOptionId}
+                        onChange={(e) =>
+                          setTicketLineForm({
+                            ...ticketLineForm,
+                            wagerOptionId: e.target.value,
+                          })
+                        }
+                        className="h-10 w-full rounded border p-2 text-gray-900"
+                      >
+                        <option value="">No option</option>
+                        {wagerOptions
+                          .filter(
+                            (option) =>
+                              option.wagerTypeId === ticketLineForm.wagerTypeId
+                          )
+                          .map((option) => (
+                            <option key={option.id} value={option.id}>
+                              {option.name}
+                            </option>
+                          ))}
+                      </select>
+                    </label>
+
+                    <label className="grid gap-1">
+                      <span className="text-sm font-medium">Selected Numbers</span>
+                      <input
+                        value={ticketLineForm.selectedNumbers}
+                        onChange={(e) =>
+                          setTicketLineForm({
+                            ...ticketLineForm,
+                            selectedNumbers: e.target.value,
+                          })
+                        }
+                        placeholder="1,2,3,4"
+                        className="h-10 w-full rounded border p-2 text-gray-900"
+                      />
+                    </label>
+
+                    <label className="grid gap-1">
+                      <span className="text-sm font-medium">Stake</span>
+                      <input
+                        value={ticketLineForm.stake}
+                        onChange={(e) =>
+                          setTicketLineForm({
+                            ...ticketLineForm,
+                            stake: e.target.value,
+                          })
+                        }
+                        className="h-10 w-full rounded border p-2 text-gray-900"
+                      />
+                    </label>
+
+                    <label className="grid gap-1">
+                      <span className="text-sm font-medium">Potential Payout</span>
+                      <input
+                        value={ticketLineForm.potentialPayout}
+                        onChange={(e) =>
+                          setTicketLineForm({
+                            ...ticketLineForm,
+                            potentialPayout: e.target.value,
+                          })
+                        }
+                        className="h-10 w-full rounded border p-2 text-gray-900"
+                      />
+                    </label>
+
+                    <div>
+                      <button
+                        type="button"
+                        onClick={addDraftTicketLine}
+                        className="h-10 w-full whitespace-nowrap rounded-md bg-green-700 px-3 py-1.5 text-sm font-semibold text-white hover:bg-green-800 lg:w-auto"
+                      >
+                        Add Line
+                      </button>
+                    </div>
+                  </div>
+
+                  {draftTicketLines.length > 0 && (
+                    <div className="mt-4 overflow-x-auto">
+                      <table className="w-full text-left text-sm">
+                        <thead className="border-b text-xs uppercase text-gray-500">
+                          <tr>
+                            <th className="py-2 pr-3">Wager Type</th>
+                            <th className="py-2 pr-3">Option</th>
+                            <th className="py-2 pr-3">Numbers</th>
+                            <th className="py-2 pr-3">Stake</th>
+                            <th className="py-2 pr-3">Potential Payout</th>
+                            <th className="py-2 pr-3">Actions</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {draftTicketLines.map((line, index) => {
+                            const wagerType = wagerTypes.find(
+                              (createdWagerType) =>
+                                createdWagerType.id === line.wagerTypeId
+                            );
+                            const wagerOption = wagerOptions.find(
+                              (createdOption) =>
+                                createdOption.id === line.wagerOptionId
+                            );
+
+                            return (
+                              <tr key={`${line.wagerTypeId}-${index}`} className="border-b last:border-0">
+                                <td className="py-2 pr-3">{wagerType?.name || ""}</td>
+                                <td className="py-2 pr-3">{wagerOption?.name || ""}</td>
+                                <td className="py-2 pr-3">
+                                  {line.selectedNumbers?.join(", ") || ""}
+                                </td>
+                                <td className="py-2 pr-3">{formatMoney(line.stake)}</td>
+                                <td className="py-2 pr-3">
+                                  {formatMoney(line.potentialPayout)}
+                                </td>
+                                <td className="py-2 pr-3">
+                                  <button
+                                    type="button"
+                                    onClick={() => removeDraftTicketLine(index)}
+                                    className="rounded-md bg-red-700 px-3 py-1 text-xs font-semibold text-white hover:bg-red-800"
+                                  >
+                                    Remove
+                                  </button>
+                                </td>
+                              </tr>
+                            );
+                          })}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
+                </div>
+
+                <div>
+                  <button className="rounded bg-blue-700 px-4 py-2 font-semibold text-white hover:bg-blue-800">
+                    Save Test Ticket
+                  </button>
+                </div>
+              </form>
+            </section>
+
+            <section className="rounded border bg-gray-50 p-4">
+              <h3 className="mb-3 font-semibold text-gray-900">
+                Created Tickets
+              </h3>
+
+              {tickets.length === 0 ? (
+                <p className="text-sm text-gray-500">No tickets created yet.</p>
+              ) : (
+                <div className="overflow-x-auto">
+                  <table className="w-full text-left text-sm">
+                    <thead className="border-b text-xs uppercase text-gray-500">
+                      <tr>
+                        <th className="py-2 pr-3">Ticket Number</th>
+                        <th className="py-2 pr-3">Account</th>
+                        <th className="py-2 pr-3">Game</th>
+                        <th className="py-2 pr-3">Drawing</th>
+                        <th className="py-2 pr-3">Total Stake</th>
+                        <th className="py-2 pr-3">Potential Payout</th>
+                        <th className="py-2 pr-3">Funding</th>
+                        <th className="py-2 pr-3">Status</th>
+                        <th className="py-2 pr-3">Created At</th>
+                        <th className="py-2 pr-3">Actions</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {tickets.map((ticket) => {
+                        const account = playerAccounts.find(
+                          (createdAccount) => createdAccount.id === ticket.accountId
+                        );
+                        const game = games.find(
+                          (createdGame: any, index: number) =>
+                            getGameLocalId(createdGame, index) === ticket.gameId
+                        );
+                        const drawing = drawings.find(
+                          (createdDrawing: any) =>
+                            createdDrawing.id === ticket.drawingId
+                        );
+                        const isExpanded = expandedTicketIds.includes(ticket.id);
+
+                        return (
+                          <Fragment key={ticket.id}>
+                            <tr key={ticket.id} className="border-b">
+                              <td className="py-2 pr-3">
+                                <button
+                                  type="button"
+                                  onClick={() => toggleTicketExpanded(ticket.id)}
+                                  className="font-semibold text-blue-700 hover:underline"
+                                >
+                                  {isExpanded ? "▼" : "▶"} {ticket.ticketNumber}
+                                </button>
+                              </td>
+                              <td className="py-2 pr-3">{account?.username || ""}</td>
+                              <td className="py-2 pr-3">{game?.name || ticket.gameId}</td>
+                              <td className="py-2 pr-3">
+                                {drawing?.drawCode || ticket.drawingId}
+                              </td>
+                              <td className="py-2 pr-3">
+                                {formatMoney(calculateTicketTotalStake(ticket.id))}
+                              </td>
+                              <td className="py-2 pr-3">
+                                {formatMoney(calculateTicketPotentialPayout(ticket.id))}
+                              </td>
+                              <td className="py-2 pr-3">{ticket.fundingType}</td>
+                              <td className="py-2 pr-3">{ticket.status}</td>
+                              <td className="py-2 pr-3">
+                                {new Date(ticket.createdAt).toLocaleString()}
+                              </td>
+                              <td className="py-2 pr-3">
+                                <div className="flex flex-wrap gap-2">
+                                  {ticket.status === "pending" && (
+                                    <button
+                                      type="button"
+                                      onClick={() =>
+                                        updateTicketStatus(ticket.id, "accepted")
+                                      }
+                                      className="rounded-md bg-green-700 px-3 py-1 text-xs font-semibold text-white hover:bg-green-800"
+                                    >
+                                      Accept
+                                    </button>
+                                  )}
+                                  {ticket.status === "pending" && (
+                                    <button
+                                      type="button"
+                                      onClick={() =>
+                                        updateTicketStatus(ticket.id, "cancelled")
+                                      }
+                                      className="rounded-md bg-yellow-700 px-3 py-1 text-xs font-semibold text-white hover:bg-yellow-800"
+                                    >
+                                      Cancel
+                                    </button>
+                                  )}
+                                  {(ticket.status === "pending" ||
+                                    ticket.status === "accepted") && (
+                                    <button
+                                      type="button"
+                                      onClick={() =>
+                                        updateTicketStatus(ticket.id, "void")
+                                      }
+                                      className="rounded-md bg-red-700 px-3 py-1 text-xs font-semibold text-white hover:bg-red-800"
+                                    >
+                                      Void
+                                    </button>
+                                  )}
+                                </div>
+                              </td>
+                            </tr>
+                            {isExpanded && (
+                              <tr key={`${ticket.id}-lines`} className="border-b bg-white">
+                                <td colSpan={10} className="p-3">
+                                  <div className="overflow-x-auto rounded border bg-gray-50 p-3">
+                                    <table className="w-full text-left text-sm">
+                                      <thead className="border-b text-xs uppercase text-gray-500">
+                                        <tr>
+                                          <th className="py-2 pr-3">Wager Type</th>
+                                          <th className="py-2 pr-3">Wager Option</th>
+                                          <th className="py-2 pr-3">Selected Numbers</th>
+                                          <th className="py-2 pr-3">Stake</th>
+                                          <th className="py-2 pr-3">Potential Payout</th>
+                                          <th className="py-2 pr-3">Line Status</th>
+                                        </tr>
+                                      </thead>
+                                      <tbody>
+                                        {getTicketLines(ticket.id).map((line) => {
+                                          const wagerType = wagerTypes.find(
+                                            (createdWagerType) =>
+                                              createdWagerType.id === line.wagerTypeId
+                                          );
+                                          const wagerOption = wagerOptions.find(
+                                            (createdOption) =>
+                                              createdOption.id === line.wagerOptionId
+                                          );
+
+                                          return (
+                                            <tr key={line.id} className="border-b last:border-0">
+                                              <td className="py-2 pr-3">
+                                                {wagerType?.name || line.wagerTypeId}
+                                              </td>
+                                              <td className="py-2 pr-3">
+                                                {wagerOption?.name || ""}
+                                              </td>
+                                              <td className="py-2 pr-3">
+                                                {line.selectedNumbers?.join(", ") || ""}
+                                              </td>
+                                              <td className="py-2 pr-3">
+                                                {formatMoney(line.stake)}
+                                              </td>
+                                              <td className="py-2 pr-3">
+                                                {formatMoney(line.potentialPayout)}
+                                              </td>
+                                              <td className="py-2 pr-3">
+                                                {line.status}
+                                              </td>
+                                            </tr>
+                                          );
+                                        })}
+                                      </tbody>
+                                    </table>
+                                  </div>
+                                </td>
+                              </tr>
+                            )}
+                          </Fragment>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </section>
+          </div>
+        );
+      })()}
+    </section>
+  </>
+)}
+{activeTab === "settlement" && (
+  <>
+    <section className="mt-8 rounded-xl bg-white p-6 shadow">
+      <h2 className="mb-4 text-xl font-semibold">Settlement</h2>
+
+      {(() => {
+        const selectedSettlementDrawing = drawings.find(
+          (drawing: any) => drawing.id === settlementForm.drawingId
+        );
+        const selectedDrawingRuns = settlementForm.drawingId
+          ? getSettlementRunsForDrawing(settlementForm.drawingId)
+          : [];
+
+        return (
+          <div className="grid gap-6">
+            <section className="rounded border bg-gray-50 p-4">
+              <h3 className="mb-2 font-semibold text-gray-900">
+                Settlement TODO / Architecture Note
+              </h3>
+              <p className="text-sm text-gray-700">
+                Future weekly close process must respect account.creditMode =
+                zero_balance or carry. Zero-balance accounts receive automatic
+                zero_balance_credit/debit entries at the configured market reset
+                time. Carry accounts remain unchanged until manual
+                deposit/withdrawal occurs.
+              </p>
+              <p className="mt-2 text-sm text-gray-700">
+                Production resettlement will require override authorization,
+                reason code, approving admin, and audit log entry.
+              </p>
+            </section>
+
+            <section className="rounded border bg-gray-50 p-4">
+              <h3 className="mb-3 font-semibold text-gray-900">
+                Create Settlement Run
+              </h3>
+
+              <form onSubmit={createSettlementRun} className="grid gap-4">
+                <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+                  <label className="grid gap-1">
+                    <span className="text-sm font-medium">Drawing</span>
+                    <select
+                      value={settlementForm.drawingId}
+                      onChange={(e) =>
+                        setSettlementForm({
+                          ...settlementForm,
+                          drawingId: e.target.value,
+                        })
+                      }
+                      className="h-10 w-full rounded border p-2 text-gray-900"
+                      required
+                    >
+                      <option value="">Select drawing</option>
+                      {drawings.map((drawing: any, index: number) => (
+                        <option key={drawing.id || index} value={drawing.id}>
+                          {drawing.drawCode || drawing.id}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+
+                  <label className="grid gap-1">
+                    <span className="text-sm font-medium">Notes</span>
+                    <input
+                      value={settlementForm.notes}
+                      onChange={(e) =>
+                        setSettlementForm({
+                          ...settlementForm,
+                          notes: e.target.value,
+                        })
+                      }
+                      className="h-10 w-full rounded border p-2 text-gray-900"
+                    />
+                  </label>
+                </div>
+
+                {settlementForm.drawingId && selectedDrawingRuns.length > 0 && (
+                  <p className="rounded border border-yellow-300 bg-yellow-50 p-3 text-sm text-yellow-800">
+                    Warning: {selectedDrawingRuns.length} settlement run
+                    {selectedDrawingRuns.length === 1 ? "" : "s"} already exist
+                    for this drawing.
+                  </p>
+                )}
+
+                {settlementForm.drawingId &&
+                  hasExistingCompletedSettlementForDrawing(
+                    settlementForm.drawingId
+                  ) && (
+                    <p className="rounded border border-red-300 bg-red-50 p-3 text-sm text-red-800">
+                      A completed settlement run already exists for this
+                      drawing. Creating another completed settlement is blocked
+                      until explicit resettlement authorization exists.
+                    </p>
+                  )}
+
+                <div>
+                  <button className="rounded bg-blue-700 px-4 py-2 font-semibold text-white hover:bg-blue-800">
+                    Create Settlement Run
+                  </button>
+                </div>
+              </form>
+
+              {selectedSettlementDrawing && (
+                <p className="mt-3 text-sm text-gray-600">
+                  Selected drawing:{" "}
+                  {selectedSettlementDrawing.drawCode ||
+                    selectedSettlementDrawing.id}
+                </p>
+              )}
+            </section>
+
+            <section className="rounded border bg-gray-50 p-4">
+              <h3 className="mb-3 font-semibold text-gray-900">
+                Settlement Runs
+              </h3>
+
+              {settlementRuns.length === 0 ? (
+                <p className="text-sm text-gray-500">
+                  No settlement runs created yet.
+                </p>
+              ) : (
+                <div className="overflow-x-auto">
+                  <table className="w-full text-left text-sm">
+                    <thead className="border-b text-xs uppercase text-gray-500">
+                      <tr>
+                        <th className="py-2 pr-3">Run ID</th>
+                        <th className="py-2 pr-3">Drawing</th>
+                        <th className="py-2 pr-3">Game</th>
+                        <th className="py-2 pr-3">Status</th>
+                        <th className="py-2 pr-3">Tickets</th>
+                        <th className="py-2 pr-3">Lines</th>
+                        <th className="py-2 pr-3">Stake</th>
+                        <th className="py-2 pr-3">Payout</th>
+                        <th className="py-2 pr-3">Net</th>
+                        <th className="py-2 pr-3">Created</th>
+                        <th className="py-2 pr-3">Actions</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {settlementRuns.map((run) => {
+                        const drawing = drawings.find(
+                          (createdDrawing: any) =>
+                            createdDrawing.id === run.drawingId
+                        );
+                        const game = games.find(
+                          (createdGame: any, index: number) =>
+                            getGameLocalId(createdGame, index) === run.gameId
+                        );
+                        const isExpanded = expandedSettlementRunIds.includes(run.id);
+                        const records = getSettlementRecordsForRun(run.id);
+
+                        return (
+                          <Fragment key={run.id}>
+                            <tr className="border-b">
+                              <td className="py-2 pr-3">
+                                <button
+                                  type="button"
+                                  onClick={() =>
+                                    toggleSettlementRunExpanded(run.id)
+                                  }
+                                  className="font-semibold text-blue-700 hover:underline"
+                                >
+                                  {isExpanded ? "▼" : "▶"} {run.id}
+                                </button>
+                              </td>
+                              <td className="py-2 pr-3">
+                                {drawing?.drawCode || run.drawingId}
+                              </td>
+                              <td className="py-2 pr-3">
+                                {game?.name || run.gameId || "Unknown"}
+                              </td>
+                              <td className="py-2 pr-3">{run.status}</td>
+                              <td className="py-2 pr-3">
+                                {run.processedTicketCount}
+                              </td>
+                              <td className="py-2 pr-3">
+                                {run.processedLineCount}
+                              </td>
+                              <td className="py-2 pr-3">
+                                {formatMoney(run.totalStake)}
+                              </td>
+                              <td className="py-2 pr-3">
+                                {formatMoney(run.totalPayout)}
+                              </td>
+                              <td className="py-2 pr-3">
+                                {formatMoney(run.totalNet)}
+                              </td>
+                              <td className="py-2 pr-3">
+                                {new Date(run.createdAt).toLocaleString()}
+                              </td>
+                              <td className="py-2 pr-3">
+                                <div className="flex flex-wrap gap-2">
+                                  <button
+                                    type="button"
+                                    onClick={() =>
+                                      generatePlaceholderSettlementRecords(run.id)
+                                    }
+                                    className="rounded-md bg-slate-700 px-3 py-1 text-xs font-semibold text-white hover:bg-slate-800"
+                                  >
+                                    Generate Records
+                                  </button>
+                                  {run.status === "pending" && (
+                                    <button
+                                      type="button"
+                                      onClick={() =>
+                                        updateSettlementRunStatus(
+                                          run.id,
+                                          "running"
+                                        )
+                                      }
+                                      className="rounded-md bg-green-700 px-3 py-1 text-xs font-semibold text-white hover:bg-green-800"
+                                    >
+                                      Start
+                                    </button>
+                                  )}
+                                  {run.status === "running" && (
+                                    <button
+                                      type="button"
+                                      onClick={() =>
+                                        updateSettlementRunStatus(
+                                          run.id,
+                                          "completed"
+                                        )
+                                      }
+                                      className="rounded-md bg-blue-700 px-3 py-1 text-xs font-semibold text-white hover:bg-blue-800"
+                                    >
+                                      Complete
+                                    </button>
+                                  )}
+                                  {(run.status === "pending" ||
+                                    run.status === "running") && (
+                                    <button
+                                      type="button"
+                                      onClick={() =>
+                                        updateSettlementRunStatus(run.id, "failed")
+                                      }
+                                      className="rounded-md bg-yellow-700 px-3 py-1 text-xs font-semibold text-white hover:bg-yellow-800"
+                                    >
+                                      Fail
+                                    </button>
+                                  )}
+                                  {run.status === "completed" && (
+                                    <button
+                                      type="button"
+                                      onClick={() =>
+                                        updateSettlementRunStatus(
+                                          run.id,
+                                          "reversed"
+                                        )
+                                      }
+                                      className="rounded-md bg-red-700 px-3 py-1 text-xs font-semibold text-white hover:bg-red-800"
+                                    >
+                                      Reverse
+                                    </button>
+                                  )}
+                                </div>
+                              </td>
+                            </tr>
+                            {isExpanded && (
+                              <tr className="border-b bg-white">
+                                <td colSpan={11} className="p-3">
+                                  <div className="rounded border bg-gray-50 p-3">
+                                    <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+                                      <p className="font-semibold text-gray-900">
+                                        Settlement Records Detail
+                                      </p>
+                                      <p className="text-sm text-gray-500">
+                                        Records: {records.length}
+                                      </p>
+                                    </div>
+
+                                    {records.length === 0 ? (
+                                      <p className="text-sm text-gray-500">
+                                        No settlement records generated yet.
+                                      </p>
+                                    ) : (
+                                      <div className="overflow-x-auto">
+                                        <table className="w-full text-left text-sm">
+                                          <thead className="border-b text-xs uppercase text-gray-500">
+                                            <tr>
+                                              <th className="py-2 pr-3">Ticket</th>
+                                              <th className="py-2 pr-3">
+                                                Ticket Line
+                                              </th>
+                                              <th className="py-2 pr-3">Account</th>
+                                              <th className="py-2 pr-3">
+                                                Wager Type
+                                              </th>
+                                              <th className="py-2 pr-3">
+                                                Wager Option
+                                              </th>
+                                              <th className="py-2 pr-3">Stake</th>
+                                              <th className="py-2 pr-3">Payout</th>
+                                              <th className="py-2 pr-3">Net</th>
+                                              <th className="py-2 pr-3">
+                                                Outcome
+                                              </th>
+                                              <th className="py-2 pr-3">Status</th>
+                                              <th className="py-2 pr-3">Version</th>
+                                            </tr>
+                                          </thead>
+                                          <tbody>
+                                            {records.map((record) => {
+                                              const ticket = tickets.find(
+                                                (createdTicket) =>
+                                                  createdTicket.id === record.ticketId
+                                              );
+                                              const account = playerAccounts.find(
+                                                (createdAccount) =>
+                                                  createdAccount.id ===
+                                                  record.accountId
+                                              );
+                                              const wagerType = wagerTypes.find(
+                                                (createdWagerType) =>
+                                                  createdWagerType.id ===
+                                                  record.wagerTypeId
+                                              );
+                                              const wagerOption = wagerOptions.find(
+                                                (createdOption) =>
+                                                  createdOption.id ===
+                                                  record.wagerOptionId
+                                              );
+
+                                              return (
+                                                <tr
+                                                  key={record.id}
+                                                  className="border-b last:border-0"
+                                                >
+                                                  <td className="py-2 pr-3">
+                                                    {ticket?.ticketNumber ||
+                                                      record.ticketId}
+                                                  </td>
+                                                  <td className="py-2 pr-3">
+                                                    {record.ticketLineId}
+                                                  </td>
+                                                  <td className="py-2 pr-3">
+                                                    {account?.username ||
+                                                      record.accountId}
+                                                  </td>
+                                                  <td className="py-2 pr-3">
+                                                    {wagerType?.name ||
+                                                      record.wagerTypeId}
+                                                  </td>
+                                                  <td className="py-2 pr-3">
+                                                    {wagerOption?.name || ""}
+                                                  </td>
+                                                  <td className="py-2 pr-3">
+                                                    {formatMoney(record.stake)}
+                                                  </td>
+                                                  <td className="py-2 pr-3">
+                                                    {formatMoney(record.payout)}
+                                                  </td>
+                                                  <td className="py-2 pr-3">
+                                                    {formatMoney(record.netAmount)}
+                                                  </td>
+                                                  <td className="py-2 pr-3">
+                                                    {record.outcome}
+                                                  </td>
+                                                  <td className="py-2 pr-3">
+                                                    {record.status}
+                                                  </td>
+                                                  <td className="py-2 pr-3">
+                                                    {record.version}
+                                                  </td>
+                                                </tr>
+                                              );
+                                            })}
+                                          </tbody>
+                                        </table>
+                                      </div>
+                                    )}
+                                  </div>
+                                </td>
+                              </tr>
+                            )}
+                          </Fragment>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </section>
+          </div>
+        );
+      })()}
+    </section>
+  </>
+)}
+{activeTab === "financialLedger" && (
+  <>
+    <section className="mt-8 rounded-xl bg-white p-6 shadow">
+      <h2 className="mb-4 text-xl font-semibold">Financial Ledger</h2>
+
+      {(() => {
+        const selectedLedgerAccountId =
+          ledgerForm.accountId || selectedAccountId || playerAccounts[0]?.id || "";
+        const selectedLedgerAccount = playerAccounts.find(
+          (account) => account.id === selectedLedgerAccountId
+        );
+        const financialSummary = selectedLedgerAccountId
+          ? getAccountFinancialSummary(selectedLedgerAccountId)
+          : null;
+        const selectedAccountTransactions = selectedLedgerAccountId
+          ? getAccountLedgerTransactions(selectedLedgerAccountId)
+          : [];
+
+        return (
+          <div className="grid gap-6">
+            <div className="rounded border bg-gray-50 p-4">
+              <h3 className="mb-3 font-semibold text-gray-900">
+                Financial Summary
+              </h3>
+
+              <label className="mb-4 grid gap-1">
+                <span className="font-medium">Account</span>
+                <select
+                  value={selectedLedgerAccountId}
+                  onChange={(e) =>
+                    setLedgerForm({
+                      ...ledgerForm,
+                      accountId: e.target.value,
+                    })
+                  }
+                  className="rounded border p-2 text-gray-900"
+                >
+                  <option value="">Select account</option>
+                  {playerAccounts.map((account) => (
+                    <option key={account.id} value={account.id}>
+                      {account.displayName} ({account.username}) -{" "}
+                      {getAccountTypeLabel(account.accountType)}
+                    </option>
+                  ))}
+                </select>
+              </label>
+
+              {!financialSummary ? (
+                <p className="text-sm text-gray-500">
+                  Select or create an account to view financial summary.
+                </p>
+              ) : (
+                <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
+                  <div className="rounded border bg-white p-3">
+                    <p className="text-xs uppercase text-gray-500">
+                      Accounting Balance
+                    </p>
+                    <p className="text-lg font-semibold">
+                      {formatMoney(financialSummary.accountingBalance)}
+                    </p>
+                  </div>
+                  <div className="rounded border bg-white p-3">
+                    <p className="text-xs uppercase text-gray-500">
+                      Weekly Figure
+                    </p>
+                    <p className="text-lg font-semibold">
+                      {formatMoney(financialSummary.weeklyFigure)}
+                    </p>
+                  </div>
+                  <div className="rounded border bg-white p-3">
+                    <p className="text-xs uppercase text-gray-500">
+                      Free Play Balance
+                    </p>
+                    <p className="text-lg font-semibold">
+                      {formatMoney(financialSummary.freeplayBalance)}
+                    </p>
+                  </div>
+                  <div className="rounded border bg-white p-3">
+                    <p className="text-xs uppercase text-gray-500">
+                      Pending Exposure
+                    </p>
+                    <p className="text-lg font-semibold">
+                      {formatMoney(financialSummary.pendingExposure)}
+                    </p>
+                  </div>
+                  <div className="rounded border bg-white p-3">
+                    <p className="text-xs uppercase text-gray-500">
+                      Available Credit
+                    </p>
+                    <p className="text-lg font-semibold">
+                      {formatMoney(financialSummary.availableCredit)}
+                    </p>
+                  </div>
+                </div>
+              )}
+
+              <p className="mt-3 text-xs text-gray-500">
+                Weekly reset placeholders: weeklyResetDay, weeklyResetTime,
+                weeklyResetTimeZone. Future scheduler: Monday 02:00 market time
+                creates zero-balance accounting transactions instead of mutating
+                balances.
+              </p>
+            </div>
+
+            <section className="rounded border bg-gray-50 p-4">
+              <h3 className="mb-3 font-semibold text-gray-900">
+                Transaction Entry (Admin Testing Only)
+              </h3>
+
+              <form onSubmit={saveLedgerTransaction} className="grid gap-4">
+                <div className="grid gap-4 md:grid-cols-3">
+                  <label className="grid gap-1">
+                    <span className="font-medium">Account</span>
+                    <select
+                      value={ledgerForm.accountId}
+                      onChange={(e) =>
+                        setLedgerForm({
+                          ...ledgerForm,
+                          accountId: e.target.value,
+                        })
+                      }
+                      className="rounded border p-2 text-gray-900"
+                      required
+                    >
+                      <option value="">Select account</option>
+                      {playerAccounts.map((account) => (
+                        <option key={account.id} value={account.id}>
+                          {account.displayName} ({account.username})
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+
+                  <label className="grid gap-1">
+                    <span className="font-medium">Category</span>
+                    <select
+                      value={ledgerForm.category}
+                      onChange={(e) => {
+                        const category = e.target.value as LedgerCategory;
+                        const transactionTypes =
+                          getTransactionTypesForCategory(category);
+
+                        setLedgerForm({
+                          ...ledgerForm,
+                          category,
+                          transactionType: transactionTypes[0],
+                        });
+                      }}
+                      className="rounded border p-2 text-gray-900"
+                    >
+                      <option value="accounting">Accounting</option>
+                      <option value="operational">Operational</option>
+                      <option value="freeplay">Free Play</option>
+                    </select>
+                  </label>
+
+                  <label className="grid gap-1">
+                    <span className="font-medium">Transaction Type</span>
+                    <select
+                      value={ledgerForm.transactionType}
+                      onChange={(e) =>
+                        setLedgerForm({
+                          ...ledgerForm,
+                          transactionType: e.target.value as TransactionType,
+                        })
+                      }
+                      className="rounded border p-2 text-gray-900"
+                    >
+                      {getTransactionTypesForCategory(ledgerForm.category).map(
+                        (transactionType) => (
+                          <option key={transactionType} value={transactionType}>
+                            {transactionType}
+                          </option>
+                        )
+                      )}
+                    </select>
+                  </label>
+
+                  <label className="grid gap-1">
+                    <span className="font-medium">Amount</span>
+                    <input
+                      value={ledgerForm.amount}
+                      onChange={(e) =>
+                        setLedgerForm({
+                          ...ledgerForm,
+                          amount: e.target.value,
+                        })
+                      }
+                      className="rounded border p-2 text-gray-900"
+                      required
+                    />
+                  </label>
+
+                  <label className="grid gap-1 md:col-span-2">
+                    <span className="font-medium">Description</span>
+                    <input
+                      value={ledgerForm.description}
+                      onChange={(e) =>
+                        setLedgerForm({
+                          ...ledgerForm,
+                          description: e.target.value,
+                        })
+                      }
+                      className="rounded border p-2 text-gray-900"
+                      required
+                    />
+                  </label>
+
+                  <label className="grid gap-1">
+                    <span className="font-medium">Reference</span>
+                    <input
+                      value={ledgerForm.referenceId}
+                      onChange={(e) =>
+                        setLedgerForm({
+                          ...ledgerForm,
+                          referenceId: e.target.value,
+                        })
+                      }
+                      className="rounded border p-2 text-gray-900"
+                    />
+                  </label>
+
+                  <label className="grid gap-1">
+                    <span className="font-medium">Created By</span>
+                    <input
+                      value={ledgerForm.createdBy}
+                      onChange={(e) =>
+                        setLedgerForm({
+                          ...ledgerForm,
+                          createdBy: e.target.value,
+                        })
+                      }
+                      className="rounded border p-2 text-gray-900"
+                    />
+                  </label>
+                </div>
+
+                <div>
+                  <button className="rounded bg-blue-700 px-4 py-2 font-semibold text-white hover:bg-blue-800">
+                    Save Transaction
+                  </button>
+                </div>
+              </form>
+            </section>
+
+            <section className="rounded border bg-gray-50 p-4">
+              <h3 className="mb-3 font-semibold text-gray-900">
+                Transaction History
+              </h3>
+
+              {ledgerTransactions.length === 0 ? (
+                <p className="text-sm text-gray-500">
+                  No ledger transactions created yet.
+                </p>
+              ) : (
+                <div className="overflow-x-auto">
+                  <table className="w-full text-left text-sm">
+                    <thead className="border-b text-xs uppercase text-gray-500">
+                      <tr>
+                        <th className="py-2 pr-3">Date</th>
+                        <th className="py-2 pr-3">Account</th>
+                        <th className="py-2 pr-3">Category</th>
+                        <th className="py-2 pr-3">Type</th>
+                        <th className="py-2 pr-3">Description</th>
+                        <th className="py-2 pr-3">Amount</th>
+                        <th className="py-2 pr-3">Reference</th>
+                        <th className="py-2 pr-3">Parent Transaction</th>
+                        <th className="py-2 pr-3">Created By</th>
+                        <th className="py-2 pr-3">Actions</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {[...ledgerTransactions]
+                        .sort(
+                          (a, b) =>
+                            new Date(b.createdAt).getTime() -
+                            new Date(a.createdAt).getTime()
+                        )
+                        .map((transaction) => {
+                          const account = playerAccounts.find(
+                            (createdAccount) =>
+                              createdAccount.id === transaction.accountId
+                          );
+                          const hasReversal = ledgerTransactions.some(
+                            (createdTransaction) =>
+                              createdTransaction.parentTransactionId ===
+                              transaction.id
+                          );
+
+                          return (
+                            <tr key={transaction.id} className="border-b last:border-0">
+                              <td className="py-2 pr-3">
+                                {new Date(transaction.createdAt).toLocaleString()}
+                              </td>
+                              <td className="py-2 pr-3">
+                                {account?.username || transaction.accountId}
+                              </td>
+                              <td className="py-2 pr-3">{transaction.category}</td>
+                              <td className="py-2 pr-3">
+                                {transaction.transactionType}
+                              </td>
+                              <td className="py-2 pr-3">
+                                {transaction.description}
+                              </td>
+                              <td className="py-2 pr-3">
+                                {formatMoney(transaction.amount)}
+                              </td>
+                              <td className="py-2 pr-3">
+                                {transaction.referenceId || ""}
+                              </td>
+                              <td className="py-2 pr-3">
+                                {transaction.parentTransactionId || ""}
+                              </td>
+                              <td className="py-2 pr-3">
+                                {transaction.createdBy || ""}
+                              </td>
+                              <td className="py-2 pr-3">
+                                {transaction.transactionType !== "reversal" &&
+                                  !hasReversal && (
+                                    <button
+                                      type="button"
+                                      onClick={() =>
+                                        reverseLedgerTransaction(transaction)
+                                      }
+                                      className="rounded-md bg-red-700 px-3 py-1 text-xs font-semibold text-white hover:bg-red-800"
+                                    >
+                                      Reverse Transaction
+                                    </button>
+                                  )}
+                              </td>
+                            </tr>
+                          );
+                        })}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </section>
+
+            <section className="rounded border bg-gray-50 p-4">
+              <h3 className="mb-3 font-semibold text-gray-900">
+                Statement Prototype
+              </h3>
+
+              {!selectedLedgerAccount ? (
+                <p className="text-sm text-gray-500">
+                  Select an account to view statement details.
+                </p>
+              ) : (
+                <div className="grid gap-4">
+                  <div className="rounded border bg-white p-3">
+                    <p className="font-semibold text-gray-900">
+                      {selectedLedgerAccount.displayName} (
+                      {selectedLedgerAccount.username})
+                    </p>
+                    <p className="text-sm text-gray-500">
+                      Free play wallet transactions are excluded from this normal
+                      statement except freeplay wins.
+                    </p>
+                  </div>
+
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-left text-sm">
+                      <thead className="border-b text-xs uppercase text-gray-500">
+                        <tr>
+                          <th className="py-2 pr-3">Date</th>
+                          <th className="py-2 pr-3">Type</th>
+                          <th className="py-2 pr-3">Description</th>
+                          <th className="py-2 pr-3">Amount</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {getStatementTransactions(selectedLedgerAccount.id).map(
+                          (transaction) => (
+                            <tr key={transaction.id} className="border-b last:border-0">
+                              <td className="py-2 pr-3">
+                                {new Date(transaction.createdAt).toLocaleString()}
+                              </td>
+                              <td className="py-2 pr-3">
+                                {transaction.transactionType}
+                              </td>
+                              <td className="py-2 pr-3">
+                                {transaction.description}
+                              </td>
+                              <td className="py-2 pr-3">
+                                {formatMoney(transaction.amount)}
+                              </td>
+                            </tr>
+                          )
+                        )}
+                      </tbody>
+                    </table>
+                  </div>
+
+                  {financialSummary && (
+                    <div className="grid gap-2 rounded border bg-white p-3 text-sm sm:grid-cols-3">
+                      <p>
+                        <span className="font-semibold">Accounting:</span>{" "}
+                        {formatMoney(financialSummary.accountingBalance)}
+                      </p>
+                      <p>
+                        <span className="font-semibold">Weekly Figure:</span>{" "}
+                        {formatMoney(financialSummary.weeklyFigure)}
+                      </p>
+                      <p>
+                        <span className="font-semibold">Available Credit:</span>{" "}
+                        {formatMoney(financialSummary.availableCredit)}
+                      </p>
+                    </div>
+                  )}
+                </div>
+              )}
+            </section>
+          </div>
+        );
+      })()}
+    </section>
+  </>
+)}
+{activeTab === "accounts" && (
+  <>
+    <section className="mt-8 rounded-xl bg-white p-6 shadow">
+      <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+        <h2 className="text-xl font-semibold">Accounts</h2>
+        <button
+          type="button"
+          onClick={addSampleAgentHierarchy}
+          className="rounded-md bg-purple-700 px-3 py-1.5 text-sm font-semibold text-white hover:bg-purple-800"
+        >
+          Add Sample Agent Hierarchy
+        </button>
+      </div>
+
+      <div className="grid gap-4 lg:grid-cols-[minmax(320px,1fr)_minmax(360px,1.25fr)]">
+        <div className="rounded border bg-gray-50 p-4">
+          <div className="mb-4 grid gap-3">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <h3 className="font-semibold text-gray-900">Network Tree</h3>
+              <button
+                type="button"
+                onClick={startCreateRootAccount}
+                className="rounded-md bg-blue-700 px-3 py-1.5 text-sm font-semibold text-white hover:bg-blue-800"
+              >
+                Add House
+              </button>
+            </div>
+
+            <input
+              value={accountSearchTerm}
+              onChange={(e) => setAccountSearchTerm(e.target.value)}
+              placeholder="Search accounts"
+              className="rounded border p-2 text-gray-900"
+            />
+
+            <select
+              value={accountTreeFilter}
+              onChange={(e) => setAccountTreeFilter(e.target.value)}
+              className="rounded border p-2 text-gray-900"
+            >
+              <option value="all">All</option>
+              <option value="super_master">Super Masters</option>
+              <option value="master_agent">Master Agents</option>
+              <option value="agent">Agents</option>
+              <option value="player">Players</option>
+              <option value="active">Active</option>
+              <option value="inactive">Inactive</option>
+            </select>
+          </div>
+
+          {getRootNetworkAccounts().filter((account) =>
+            shouldShowAccountInTree(account)
+          ).length === 0 ? (
+            <p className="text-sm text-gray-500">No matching accounts.</p>
+          ) : (
+            <div className="grid gap-1">
+              {getRootNetworkAccounts().map((account) =>
+                renderNetworkTreeNode(account)
+              )}
+            </div>
+          )}
+        </div>
+
+        <div className="rounded border bg-white p-4">
+          {(() => {
+            const selectedAccount = getSelectedAccount();
+            const selectedMarket = markets.find(
+              (market) => market.id === selectedAccount?.marketId
+            );
+            const childCount = selectedAccount
+              ? getChildAccounts(selectedAccount.id).length
+              : 0;
+            const descendantCount = selectedAccount
+              ? getDescendantAccountIds(selectedAccount.id).length
+              : 0;
+            const canCreateChildren =
+              selectedAccount &&
+              getAllowedChildAccountTypes(selectedAccount.accountType).length > 0;
+
+            if (accountPanelMode) {
+              return (
+                <form onSubmit={savePlayerAccount} className="grid gap-4">
+                  <div>
+                    <h3 className="text-lg font-semibold text-gray-900">
+                      {accountPanelMode === "move"
+                        ? "Move Account"
+                        : accountPanelMode === "edit"
+                          ? "Edit Account"
+                          : "Create Account"}
+                    </h3>
+                    <p className="text-sm text-gray-500">
+                      Network changes stay local until backend persistence is added.
+                    </p>
+                  </div>
+
+                  {accountPanelMode !== "move" && (
+                    <div className="grid gap-4 md:grid-cols-2">
+                      <label className="grid gap-1">
+                        <span className="font-medium">Account Type</span>
+                        <select
+                          value={playerAccountForm.accountType}
+                          onChange={(e) =>
+                            setPlayerAccountForm({
+                              ...playerAccountForm,
+                              accountType: e.target.value as AccountType,
+                              parentId: "",
+                            })
+                          }
+                          className="rounded border p-2 text-gray-900"
+                          required
+                        >
+                          <option value="super_master">House / Super Master</option>
+                          <option value="master_agent">Master Agent</option>
+                          <option value="agent">Agent</option>
+                          <option value="player">Player</option>
+                        </select>
+                      </label>
+
+                      {playerAccountForm.accountType !== "super_master" && (
+                        <label className="grid gap-1">
+                          <span className="font-medium">Parent Account</span>
+                          <select
+                            value={playerAccountForm.parentId}
+                            onChange={(e) =>
+                              setPlayerAccountForm({
+                                ...playerAccountForm,
+                                parentId: e.target.value,
+                              })
+                            }
+                            className="rounded border p-2 text-gray-900"
+                            required
+                          >
+                            <option value="">Select parent account</option>
+                            {getParentOptionsForAccountType(
+                              playerAccountForm.accountType
+                            ).map((account) => (
+                              <option key={account.id} value={account.id}>
+                                {account.displayName} ({account.username})
+                              </option>
+                            ))}
+                          </select>
+                        </label>
+                      )}
+
+                      <label className="grid gap-1">
+                        <span className="font-medium">Username</span>
+                        <input
+                          value={playerAccountForm.username}
+                          onChange={(e) =>
+                            setPlayerAccountForm({
+                              ...playerAccountForm,
+                              username: e.target.value,
+                            })
+                          }
+                          className="rounded border p-2 text-gray-900"
+                          required
+                        />
+                      </label>
+
+                      <label className="grid gap-1">
+                        <span className="font-medium">Display Name</span>
+                        <input
+                          value={playerAccountForm.displayName}
+                          onChange={(e) =>
+                            setPlayerAccountForm({
+                              ...playerAccountForm,
+                              displayName: e.target.value,
+                            })
+                          }
+                          className="rounded border p-2 text-gray-900"
+                          required
+                        />
+                      </label>
+
+                      <label className="grid gap-1">
+                        <span className="font-medium">Email</span>
+                        <input
+                          value={playerAccountForm.email}
+                          onChange={(e) =>
+                            setPlayerAccountForm({
+                              ...playerAccountForm,
+                              email: e.target.value,
+                            })
+                          }
+                          className="rounded border p-2 text-gray-900"
+                        />
+                      </label>
+
+                      <label className="grid gap-1">
+                        <span className="font-medium">Phone</span>
+                        <input
+                          value={playerAccountForm.phone}
+                          onChange={(e) =>
+                            setPlayerAccountForm({
+                              ...playerAccountForm,
+                              phone: e.target.value,
+                            })
+                          }
+                          className="rounded border p-2 text-gray-900"
+                        />
+                      </label>
+
+                      <label className="grid gap-1">
+                        <span className="font-medium">Market</span>
+                        <select
+                          value={playerAccountForm.marketId}
+                          onChange={(e) => {
+                            const market = markets.find(
+                              (createdMarket) => createdMarket.id === e.target.value
+                            );
+
+                            setPlayerAccountForm({
+                              ...playerAccountForm,
+                              marketId: e.target.value,
+                              language:
+                                playerAccountForm.language || market?.language || "",
+                              currency:
+                                playerAccountForm.currency || market?.currency || "USD",
+                            });
+                          }}
+                          className="rounded border p-2 text-gray-900"
+                        >
+                          <option value="">No market assigned</option>
+                          {markets.map((market) => (
+                            <option key={market.id} value={market.id}>
+                              {market.name} ({market.code})
+                            </option>
+                          ))}
+                        </select>
+                      </label>
+
+                      <label className="grid gap-1">
+                        <span className="font-medium">Language</span>
+                        <input
+                          value={playerAccountForm.language}
+                          onChange={(e) =>
+                            setPlayerAccountForm({
+                              ...playerAccountForm,
+                              language: e.target.value,
+                            })
+                          }
+                          className="rounded border p-2 text-gray-900"
+                        />
+                      </label>
+
+                      <label className="grid gap-1">
+                        <span className="font-medium">Currency</span>
+                        <input
+                          value={playerAccountForm.currency}
+                          onChange={(e) =>
+                            setPlayerAccountForm({
+                              ...playerAccountForm,
+                              currency: e.target.value,
+                            })
+                          }
+                          className="rounded border p-2 text-gray-900"
+                        />
+                      </label>
+
+                      <label className="grid gap-1">
+                        <span className="font-medium">Status</span>
+                        <select
+                          value={playerAccountForm.status}
+                          onChange={(e) =>
+                            setPlayerAccountForm({
+                              ...playerAccountForm,
+                              status: e.target.value as AccountStatus,
+                            })
+                          }
+                          className="rounded border p-2 text-gray-900"
+                        >
+                          <option value="active">Active</option>
+                          <option value="suspended">Suspended</option>
+                          <option value="inactive">Inactive</option>
+                        </select>
+                      </label>
+
+                      <label className="grid gap-1">
+                        <span className="font-medium">Cash Balance</span>
+                        <input
+                          value={playerAccountForm.cashBalance}
+                          onChange={(e) =>
+                            setPlayerAccountForm({
+                              ...playerAccountForm,
+                              cashBalance: e.target.value,
+                            })
+                          }
+                          className="rounded border p-2 text-gray-900"
+                        />
+                      </label>
+
+                      <label className="grid gap-1">
+                        <span className="font-medium">Credit Limit</span>
+                        <input
+                          value={playerAccountForm.creditLimit}
+                          onChange={(e) =>
+                            setPlayerAccountForm({
+                              ...playerAccountForm,
+                              creditLimit: e.target.value,
+                            })
+                          }
+                          className="rounded border p-2 text-gray-900"
+                        />
+                      </label>
+
+                      <label className="grid gap-1">
+                        <span className="font-medium">Current Exposure</span>
+                        <input
+                          value={playerAccountForm.currentExposure}
+                          onChange={(e) =>
+                            setPlayerAccountForm({
+                              ...playerAccountForm,
+                              currentExposure: e.target.value,
+                            })
+                          }
+                          className="rounded border p-2 text-gray-900"
+                        />
+                      </label>
+
+                      <div className="grid gap-1">
+                        <span className="font-medium">Available Credit</span>
+                        <div className="rounded border bg-gray-50 p-2 text-gray-900">
+                          {Number(playerAccountForm.creditLimit || 0) -
+                            Number(playerAccountForm.currentExposure || 0)}
+                        </div>
+                      </div>
+
+                      <label className="grid gap-1">
+                        <span className="font-medium">Max Bet</span>
+                        <input
+                          value={playerAccountForm.maxBet}
+                          onChange={(e) =>
+                            setPlayerAccountForm({
+                              ...playerAccountForm,
+                              maxBet: e.target.value,
+                            })
+                          }
+                          className="rounded border p-2 text-gray-900"
+                        />
+                      </label>
+
+                      <label className="grid gap-1">
+                        <span className="font-medium">Max Payout</span>
+                        <input
+                          value={playerAccountForm.maxPayout}
+                          onChange={(e) =>
+                            setPlayerAccountForm({
+                              ...playerAccountForm,
+                              maxPayout: e.target.value,
+                            })
+                          }
+                          className="rounded border p-2 text-gray-900"
+                        />
+                      </label>
+                    </div>
+                  )}
+
+                  {accountPanelMode === "move" && (
+                    <label className="grid gap-1">
+                      <span className="font-medium">New Parent Account</span>
+                      <select
+                        value={playerAccountForm.parentId}
+                        onChange={(e) =>
+                          setPlayerAccountForm({
+                            ...playerAccountForm,
+                            parentId: e.target.value,
+                          })
+                        }
+                        className="rounded border p-2 text-gray-900"
+                        required
+                      >
+                        <option value="">Select parent account</option>
+                        {getParentOptionsForAccountType(
+                          playerAccountForm.accountType
+                        ).map((account) => (
+                          <option key={account.id} value={account.id}>
+                            {account.displayName} ({account.username})
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                  )}
+
+                  {accountPanelMode !== "move" && (
+                    <label className="grid gap-1">
+                      <span className="font-medium">Notes</span>
+                      <textarea
+                        value={playerAccountForm.notes}
+                        onChange={(e) =>
+                          setPlayerAccountForm({
+                            ...playerAccountForm,
+                            notes: e.target.value,
+                          })
+                        }
+                        className="rounded border p-2 text-gray-900"
+                        rows={3}
+                      />
+                    </label>
+                  )}
+
+                  <div className="flex flex-wrap gap-2">
+                    <button className="rounded bg-blue-700 px-4 py-2 font-semibold text-white hover:bg-blue-800">
+                      {accountPanelMode === "move"
+                        ? "Move Account"
+                        : accountPanelMode === "edit"
+                          ? "Update Account"
+                          : "Create Account"}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={resetPlayerAccountForm}
+                      className="rounded bg-gray-200 px-4 py-2 font-semibold text-gray-700 hover:bg-gray-300"
+                    >
+                      Cancel
+                    </button>
+                  </div>
+                </form>
+              );
+            }
+
+            if (!selectedAccount) {
+              return (
+                <div className="grid gap-3 text-sm text-gray-600">
+                  <h3 className="text-lg font-semibold text-gray-900">
+                    Account Details
+                  </h3>
+                  <p>Select an account in the network tree to view details.</p>
+                  <p>
+                    Future Wallet Metrics: Balance, Exposure, Available Credit.
+                  </p>
+                  <p>Future Reporting: Weekly Handle, Open Tickets, Active Players.</p>
+                </div>
+              );
+            }
+
+            return (
+              <div className="grid gap-4">
+                <div className="flex flex-wrap items-start justify-between gap-3">
+                  <div>
+                    <h3 className="text-xl font-semibold text-gray-900">
+                      {selectedAccount.displayName}
+                    </h3>
+                    <p className="text-sm text-gray-500">
+                      {selectedAccount.username} |{" "}
+                      {getAccountTypeLabel(selectedAccount.accountType)}
+                    </p>
+                  </div>
+                  <span
+                    className={`rounded px-2 py-1 text-xs font-semibold ${
+                      selectedAccount.status === "active"
+                        ? "bg-green-100 text-green-800"
+                        : "bg-gray-200 text-gray-700"
+                    }`}
+                  >
+                    {selectedAccount.status}
+                  </span>
+                </div>
+
+                <div className="grid gap-2 rounded border bg-gray-50 p-3 text-sm sm:grid-cols-2">
+                  <p>
+                    <span className="font-semibold">Direct Children:</span>{" "}
+                    {childCount}
+                  </p>
+                  <p>
+                    <span className="font-semibold">Descendants:</span>{" "}
+                    {descendantCount}
+                  </p>
+                </div>
+
+                <div className="grid gap-2 text-sm sm:grid-cols-2">
+                  <p><span className="font-semibold">Username:</span> {selectedAccount.username}</p>
+                  <p><span className="font-semibold">Display Name:</span> {selectedAccount.displayName}</p>
+                  <p><span className="font-semibold">Account Type:</span> {getAccountTypeLabel(selectedAccount.accountType)}</p>
+                  <p><span className="font-semibold">Parent:</span> {getAccountDisplayName(selectedAccount.parentId) || "None"}</p>
+                  <p><span className="font-semibold">Market:</span> {selectedMarket?.name || ""}</p>
+                  <p><span className="font-semibold">Language:</span> {selectedAccount.language || ""}</p>
+                  <p><span className="font-semibold">Currency:</span> {selectedAccount.currency || ""}</p>
+                  <p><span className="font-semibold">Cash Balance:</span> {Number(selectedAccount.cashBalance || 0).toFixed(2)}</p>
+                  <p><span className="font-semibold">Credit Limit:</span> {Number(selectedAccount.creditLimit || 0).toFixed(2)}</p>
+                  <p><span className="font-semibold">Current Exposure:</span> {Number(selectedAccount.currentExposure || 0).toFixed(2)}</p>
+                  <p><span className="font-semibold">Available Credit:</span> {Number(selectedAccount.availableCredit || 0).toFixed(2)}</p>
+                  <p><span className="font-semibold">Max Bet:</span> {selectedAccount.maxBet ?? ""}</p>
+                  <p><span className="font-semibold">Max Payout:</span> {selectedAccount.maxPayout ?? ""}</p>
+                  <p className="sm:col-span-2"><span className="font-semibold">Notes:</span> {selectedAccount.notes || ""}</p>
+                </div>
+
+                <div className="flex flex-wrap gap-2">
+                  <button
+                    type="button"
+                    onClick={() => startEditSelectedAccount(selectedAccount)}
+                    className="rounded-md bg-slate-700 px-3 py-1.5 text-sm font-semibold text-white hover:bg-slate-800"
+                  >
+                    Edit
+                  </button>
+                  {selectedAccount.accountType !== "super_master" && (
+                    <button
+                      type="button"
+                      onClick={() => startMoveSelectedAccount(selectedAccount)}
+                      className="rounded-md bg-blue-700 px-3 py-1.5 text-sm font-semibold text-white hover:bg-blue-800"
+                    >
+                      Move
+                    </button>
+                  )}
+                  <button
+                    type="button"
+                    onClick={() => deletePlayerAccount(selectedAccount.id)}
+                    className="rounded-md bg-red-700 px-3 py-1.5 text-sm font-semibold text-white hover:bg-red-800"
+                  >
+                    Delete
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => toggleSelectedAccountStatus(selectedAccount)}
+                    className="rounded-md bg-gray-700 px-3 py-1.5 text-sm font-semibold text-white hover:bg-gray-800"
+                  >
+                    {selectedAccount.status === "active" ? "Deactivate" : "Activate"}
+                  </button>
+                </div>
+
+                {canCreateChildren && (
+                  <div className="border-t pt-4">
+                    <p className="mb-2 text-sm font-semibold text-gray-700">
+                      Add Downline
+                    </p>
+                    <div className="flex flex-wrap gap-2">
+                      {getAllowedChildAccountTypes(selectedAccount.accountType).map(
+                        (accountType) => (
+                          <button
+                            key={accountType}
+                            type="button"
+                            onClick={() =>
+                              startCreateChildAccount(selectedAccount, accountType)
+                            }
+                            className="rounded-md bg-green-700 px-3 py-1.5 text-sm font-semibold text-white hover:bg-green-800"
+                          >
+                            Add {getAccountTypeLabel(accountType)}
+                          </button>
+                        )
+                      )}
+                    </div>
+                  </div>
+                )}
+              </div>
+            );
+          })()}
+        </div>
+      </div>
+
+      <form onSubmit={savePlayerAccount} className="hidden">
+        <div className="grid gap-4 md:grid-cols-3">
+          <label className="grid gap-1">
+            <span className="font-medium">Account Type</span>
+            <select
+              value={playerAccountForm.accountType}
+              onChange={(e) =>
+                setPlayerAccountForm({
+                  ...playerAccountForm,
+                  accountType: e.target.value as AccountType,
+                  parentId: "",
+                })
+              }
+              className="rounded border p-2 text-gray-900"
+              required
+            >
+              <option value="super_master">House / Super Master</option>
+              <option value="master_agent">Master Agent</option>
+              <option value="agent">Agent</option>
+              <option value="player">Player</option>
+            </select>
+          </label>
+
+          {playerAccountForm.accountType !== "super_master" && (
+            <label className="grid gap-1">
+              <span className="font-medium">Parent Account</span>
+              <select
+                value={playerAccountForm.parentId}
+                onChange={(e) =>
+                  setPlayerAccountForm({
+                    ...playerAccountForm,
+                    parentId: e.target.value,
+                  })
+                }
+                className="rounded border p-2 text-gray-900"
+                required
+              >
+                <option value="">Select parent account</option>
+                {getParentOptionsForAccountType(playerAccountForm.accountType).map(
+                  (account) => (
+                    <option key={account.id} value={account.id}>
+                      {account.displayName} ({account.username})
+                    </option>
+                  )
+                )}
+              </select>
+            </label>
+          )}
+
+          <label className="grid gap-1">
+            <span className="font-medium">Username</span>
+            <input
+              value={playerAccountForm.username}
+              onChange={(e) =>
+                setPlayerAccountForm({
+                  ...playerAccountForm,
+                  username: e.target.value,
+                })
+              }
+              placeholder="Example: agent1"
+              className="rounded border p-2 text-gray-900"
+              required
+            />
+          </label>
+
+          <label className="grid gap-1">
+            <span className="font-medium">Display Name</span>
+            <input
+              value={playerAccountForm.displayName}
+              onChange={(e) =>
+                setPlayerAccountForm({
+                  ...playerAccountForm,
+                  displayName: e.target.value,
+                })
+              }
+              placeholder="Example: Agent 1"
+              className="rounded border p-2 text-gray-900"
+              required
+            />
+          </label>
+
+          <label className="grid gap-1">
+            <span className="font-medium">Email</span>
+            <input
+              value={playerAccountForm.email}
+              onChange={(e) =>
+                setPlayerAccountForm({
+                  ...playerAccountForm,
+                  email: e.target.value,
+                })
+              }
+              placeholder="account@example.com"
+              className="rounded border p-2 text-gray-900"
+            />
+          </label>
+
+          <label className="grid gap-1">
+            <span className="font-medium">Phone</span>
+            <input
+              value={playerAccountForm.phone}
+              onChange={(e) =>
+                setPlayerAccountForm({
+                  ...playerAccountForm,
+                  phone: e.target.value,
+                })
+              }
+              placeholder="Optional"
+              className="rounded border p-2 text-gray-900"
+            />
+          </label>
+
+          <label className="grid gap-1">
+            <span className="font-medium">Market</span>
+            <select
+              value={playerAccountForm.marketId}
+              onChange={(e) => {
+                const selectedMarket = markets.find(
+                  (market) => market.id === e.target.value
+                );
+
+                setPlayerAccountForm({
+                  ...playerAccountForm,
+                  marketId: e.target.value,
+                  language:
+                    playerAccountForm.language || selectedMarket?.language || "",
+                  currency:
+                    playerAccountForm.currency || selectedMarket?.currency || "USD",
+                });
+              }}
+              className="rounded border p-2 text-gray-900"
+            >
+              <option value="">No market assigned</option>
+              {markets.map((market) => (
+                <option key={market.id} value={market.id}>
+                  {market.name} ({market.code})
+                </option>
+              ))}
+            </select>
+          </label>
+
+          <label className="grid gap-1">
+            <span className="font-medium">Language</span>
+            <input
+              value={playerAccountForm.language}
+              onChange={(e) =>
+                setPlayerAccountForm({
+                  ...playerAccountForm,
+                  language: e.target.value,
+                })
+              }
+              placeholder="Example: en"
+              className="rounded border p-2 text-gray-900"
+            />
+          </label>
+
+          <label className="grid gap-1">
+            <span className="font-medium">Currency</span>
+            <input
+              value={playerAccountForm.currency}
+              onChange={(e) =>
+                setPlayerAccountForm({
+                  ...playerAccountForm,
+                  currency: e.target.value,
+                })
+              }
+              placeholder="Example: USD"
+              className="rounded border p-2 text-gray-900"
+            />
+          </label>
+
+          <label className="grid gap-1">
+            <span className="font-medium">Status</span>
+            <select
+              value={playerAccountForm.status}
+              onChange={(e) =>
+                setPlayerAccountForm({
+                  ...playerAccountForm,
+                  status: e.target.value as AccountStatus,
+                })
+              }
+              className="rounded border p-2 text-gray-900"
+              required
+            >
+              <option value="active">Active</option>
+              <option value="suspended">Suspended</option>
+              <option value="inactive">Inactive</option>
+            </select>
+          </label>
+
+          <label className="grid gap-1">
+            <span className="font-medium">Cash Balance</span>
+            <input
+              value={playerAccountForm.cashBalance}
+              onChange={(e) =>
+                setPlayerAccountForm({
+                  ...playerAccountForm,
+                  cashBalance: e.target.value,
+                })
+              }
+              className="rounded border p-2 text-gray-900"
+              required
+            />
+          </label>
+
+          <label className="grid gap-1">
+            <span className="font-medium">Credit Limit</span>
+            <input
+              value={playerAccountForm.creditLimit}
+              onChange={(e) =>
+                setPlayerAccountForm({
+                  ...playerAccountForm,
+                  creditLimit: e.target.value,
+                })
+              }
+              className="rounded border p-2 text-gray-900"
+              required
+            />
+          </label>
+
+          <label className="grid gap-1">
+            <span className="font-medium">Current Exposure</span>
+            <input
+              value={playerAccountForm.currentExposure}
+              onChange={(e) =>
+                setPlayerAccountForm({
+                  ...playerAccountForm,
+                  currentExposure: e.target.value,
+                })
+              }
+              className="rounded border p-2 text-gray-900"
+              required
+            />
+          </label>
+
+          <label className="grid gap-1">
+            <span className="font-medium">Max Bet</span>
+            <input
+              value={playerAccountForm.maxBet}
+              onChange={(e) =>
+                setPlayerAccountForm({
+                  ...playerAccountForm,
+                  maxBet: e.target.value,
+                })
+              }
+              placeholder="Optional"
+              className="rounded border p-2 text-gray-900"
+            />
+          </label>
+
+          <label className="grid gap-1">
+            <span className="font-medium">Max Payout</span>
+            <input
+              value={playerAccountForm.maxPayout}
+              onChange={(e) =>
+                setPlayerAccountForm({
+                  ...playerAccountForm,
+                  maxPayout: e.target.value,
+                })
+              }
+              placeholder="Optional"
+              className="rounded border p-2 text-gray-900"
+            />
+          </label>
+
+          <div className="grid gap-1">
+            <span className="font-medium">Available Credit</span>
+            <div className="rounded border bg-gray-50 p-2 text-gray-900">
+              {Number(playerAccountForm.creditLimit || 0) -
+                Number(playerAccountForm.currentExposure || 0)}
+            </div>
+          </div>
+        </div>
+
+        <label className="grid gap-1">
+          <span className="font-medium">Notes</span>
+          <textarea
+            value={playerAccountForm.notes}
+            onChange={(e) =>
+              setPlayerAccountForm({
+                ...playerAccountForm,
+                notes: e.target.value,
+              })
+            }
+            className="rounded border p-2 text-gray-900"
+            rows={3}
+          />
+        </label>
+
+        <div className="flex flex-wrap gap-2">
+          <button className="rounded bg-blue-700 px-4 py-2 font-semibold text-white hover:bg-blue-800">
+            {editingPlayerAccountId ? "Update Account" : "Create Account"}
+          </button>
+          <button
+            type="button"
+            onClick={resetPlayerAccountForm}
+            className="rounded bg-gray-200 px-4 py-2 font-semibold text-gray-700 hover:bg-gray-300"
+          >
+            Reset
+          </button>
+          {editingPlayerAccountId && (
+            <button
+              type="button"
+              onClick={resetPlayerAccountForm}
+              className="rounded bg-slate-200 px-4 py-2 font-semibold text-slate-700 hover:bg-slate-300"
+            >
+              Cancel Edit
+            </button>
+          )}
+        </div>
+      </form>
+
+      <div className="hidden">
+      {playerAccounts.length === 0 ? (
+        <p className="text-sm text-gray-500">No accounts created yet.</p>
       ) : (
         <div className="overflow-x-auto">
           <table className="w-full text-left text-sm">
             <thead className="border-b text-xs uppercase text-gray-500">
               <tr>
-                <th className="py-2 pr-3">profile_code</th>
-                <th className="py-2 pr-3">status</th>
+                <th className="py-2 pr-3">Username</th>
+                <th className="py-2 pr-3">Display Name</th>
+                <th className="py-2 pr-3">Account Type</th>
+                <th className="py-2 pr-3">Parent</th>
+                <th className="py-2 pr-3">Market</th>
+                <th className="py-2 pr-3">Currency</th>
+                <th className="py-2 pr-3">Cash Balance</th>
+                <th className="py-2 pr-3">Credit Limit</th>
+                <th className="py-2 pr-3">Current Exposure</th>
+                <th className="py-2 pr-3">Available Credit</th>
+                <th className="py-2 pr-3">Status</th>
+                <th className="min-w-[130px] py-2 pr-3">Actions</th>
               </tr>
             </thead>
             <tbody>
-              {hotspotProfiles.map((profile: any) => (
-                <tr key={profile.id} className="border-b last:border-0">
-                  <td className="py-2 pr-3 font-medium">
-                    {profile.profile_code}
+              {playerAccounts.map((account) => {
+                const market = markets.find(
+                  (createdMarket) => createdMarket.id === account.marketId
+                );
+
+                return (
+                  <tr key={account.id} className="border-b last:border-0">
+                    <td className="py-2 pr-3 font-medium">{account.username}</td>
+                    <td className="py-2 pr-3">{account.displayName}</td>
+                    <td className="py-2 pr-3">
+                      {getAccountTypeLabel(account.accountType)}
+                    </td>
+                    <td className="py-2 pr-3">
+                      {getParentAccount(account.id)
+                        ? getAccountDisplayName(account.parentId)
+                        : ""}
+                    </td>
+                    <td className="py-2 pr-3">{market?.name || ""}</td>
+                    <td className="py-2 pr-3">{account.currency || ""}</td>
+                    <td className="py-2 pr-3">
+                      {Number(account.cashBalance || 0).toFixed(2)}
+                    </td>
+                    <td className="py-2 pr-3">
+                      {Number(account.creditLimit || 0).toFixed(2)}
+                    </td>
+                    <td className="py-2 pr-3">
+                      {Number(account.currentExposure || 0).toFixed(2)}
+                    </td>
+                    <td className="py-2 pr-3">
+                      {Number(account.availableCredit || 0).toFixed(2)}
+                    </td>
+                    <td className="py-2 pr-3">{account.status}</td>
+                    <td className="min-w-[130px] py-2 pr-3">
+                      <div className="flex flex-nowrap items-center gap-2">
+                        <button
+                          type="button"
+                          onClick={() => editPlayerAccount(account)}
+                          className="rounded-md bg-slate-700 px-3 py-1 text-xs font-semibold text-white hover:bg-slate-800"
+                        >
+                          Edit
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => deletePlayerAccount(account.id)}
+                          className="rounded-md bg-red-700 px-3 py-1 text-xs font-semibold text-white hover:bg-red-800"
+                        >
+                          Delete
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      )}
+      </div>
+    </section>
+
+    <section className="hidden">
+      <h2 className="mb-4 text-xl font-semibold">Account Hierarchy</h2>
+
+      {playerAccounts.filter(
+        (account) => account.accountType === "super_master" || !account.parentId
+      ).length === 0 ? (
+        <p className="text-sm text-gray-500">No hierarchy to display yet.</p>
+      ) : (
+        <div className="grid gap-4">
+          {playerAccounts
+            .filter(
+              (account) =>
+                account.accountType === "super_master" || !account.parentId
+            )
+            .map((account) => renderAccountHierarchyNode(account))}
+        </div>
+      )}
+    </section>
+  </>
+)}
+{activeTab === "markets" && (
+  <>
+    <section className="mt-8 rounded-xl bg-white p-6 shadow">
+      <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+        <h2 className="text-xl font-semibold">Markets</h2>
+        <button
+          type="button"
+          onClick={addDefaultMarkets}
+          className="rounded-md bg-purple-700 px-3 py-1.5 text-sm font-semibold text-white hover:bg-purple-800"
+        >
+          Add Default Markets
+        </button>
+      </div>
+
+      <form onSubmit={saveMarket} className="mb-6 grid gap-4">
+        <div className="grid gap-4 md:grid-cols-3">
+          <label className="grid gap-1">
+            <span className="font-medium">Market Name</span>
+            <input
+              value={marketForm.name}
+              onChange={(e) =>
+                setMarketForm({
+                  ...marketForm,
+                  name: e.target.value,
+                })
+              }
+              placeholder="Example: Costa Rica"
+              className="rounded border p-2 text-gray-900"
+              required
+            />
+          </label>
+
+          <label className="grid gap-1">
+            <span className="font-medium">Market Code</span>
+            <input
+              value={marketForm.code}
+              onChange={(e) =>
+                setMarketForm({
+                  ...marketForm,
+                  code: e.target.value,
+                })
+              }
+              placeholder="Example: CR"
+              className="rounded border p-2 text-gray-900"
+              required
+            />
+          </label>
+
+          <label className="grid gap-1">
+            <span className="font-medium">Language</span>
+            <input
+              value={marketForm.language}
+              onChange={(e) =>
+                setMarketForm({
+                  ...marketForm,
+                  language: e.target.value,
+                })
+              }
+              placeholder="Example: es"
+              className="rounded border p-2 text-gray-900"
+              required
+            />
+          </label>
+
+          <label className="grid gap-1">
+            <span className="font-medium">Currency</span>
+            <input
+              value={marketForm.currency}
+              onChange={(e) =>
+                setMarketForm({
+                  ...marketForm,
+                  currency: e.target.value,
+                })
+              }
+              placeholder="Example: USD"
+              className="rounded border p-2 text-gray-900"
+              required
+            />
+          </label>
+
+          <label className="grid gap-1">
+            <span className="font-medium">Time Zone</span>
+            <input
+              value={marketForm.timeZone}
+              onChange={(e) =>
+                setMarketForm({
+                  ...marketForm,
+                  timeZone: e.target.value,
+                })
+              }
+              placeholder="Example: America/Costa_Rica"
+              className="rounded border p-2 text-gray-900"
+              required
+            />
+          </label>
+
+          <label className="grid gap-1">
+            <span className="font-medium">Date Format</span>
+            <input
+              value={marketForm.dateFormat}
+              onChange={(e) =>
+                setMarketForm({
+                  ...marketForm,
+                  dateFormat: e.target.value,
+                })
+              }
+              placeholder="Example: DD/MM/YYYY"
+              className="rounded border p-2 text-gray-900"
+            />
+          </label>
+
+          <label className="grid gap-1">
+            <span className="font-medium">Number Format</span>
+            <input
+              value={marketForm.numberFormat}
+              onChange={(e) =>
+                setMarketForm({
+                  ...marketForm,
+                  numberFormat: e.target.value,
+                })
+              }
+              placeholder="Example: es-CR"
+              className="rounded border p-2 text-gray-900"
+            />
+          </label>
+
+          <label className="grid gap-1">
+            <span className="font-medium">Default Brand</span>
+            <input
+              value={marketForm.defaultBrand}
+              onChange={(e) =>
+                setMarketForm({
+                  ...marketForm,
+                  defaultBrand: e.target.value,
+                })
+              }
+              placeholder="Example: Default"
+              className="rounded border p-2 text-gray-900"
+            />
+          </label>
+        </div>
+
+        <label className="flex items-center gap-2 text-sm font-medium text-gray-700">
+          <input
+            type="checkbox"
+            checked={marketForm.active}
+            onChange={(e) =>
+              setMarketForm({
+                ...marketForm,
+                active: e.target.checked,
+              })
+            }
+          />
+          Active
+        </label>
+
+        <div className="flex flex-wrap gap-2">
+          <button className="rounded bg-blue-700 px-4 py-2 font-semibold text-white hover:bg-blue-800">
+            {editingMarketId ? "Update Market" : "Create Market"}
+          </button>
+          <button
+            type="button"
+            onClick={resetMarketForm}
+            className="rounded bg-gray-200 px-4 py-2 font-semibold text-gray-700 hover:bg-gray-300"
+          >
+            Reset
+          </button>
+          {editingMarketId && (
+            <button
+              type="button"
+              onClick={resetMarketForm}
+              className="rounded bg-slate-200 px-4 py-2 font-semibold text-slate-700 hover:bg-slate-300"
+            >
+              Cancel Edit
+            </button>
+          )}
+        </div>
+      </form>
+
+      {markets.length === 0 ? (
+        <p className="text-sm text-gray-500">No markets created yet.</p>
+      ) : (
+        <div className="overflow-x-auto">
+          <table className="w-full text-left text-sm">
+            <thead className="border-b text-xs uppercase text-gray-500">
+              <tr>
+                <th className="py-2 pr-3">Market Name</th>
+                <th className="py-2 pr-3">Code</th>
+                <th className="py-2 pr-3">Language</th>
+                <th className="py-2 pr-3">Currency</th>
+                <th className="py-2 pr-3">Time Zone</th>
+                <th className="py-2 pr-3">Default Brand</th>
+                <th className="py-2 pr-3">Active</th>
+                <th className="min-w-[130px] py-2 pr-3">Actions</th>
+              </tr>
+            </thead>
+            <tbody>
+              {markets.map((market) => (
+                <tr key={market.id} className="border-b last:border-0">
+                  <td className="py-2 pr-3 font-medium">{market.name}</td>
+                  <td className="py-2 pr-3">{market.code}</td>
+                  <td className="py-2 pr-3">{market.language}</td>
+                  <td className="py-2 pr-3">{market.currency}</td>
+                  <td className="py-2 pr-3">{market.timeZone}</td>
+                  <td className="py-2 pr-3">{market.defaultBrand}</td>
+                  <td className="py-2 pr-3">
+                    {market.active ? "Active" : "Inactive"}
                   </td>
-                  <td className="py-2 pr-3">{profile.status}</td>
+                  <td className="min-w-[130px] py-2 pr-3">
+                    <div className="flex flex-nowrap items-center gap-2">
+                      <button
+                        type="button"
+                        onClick={() => editMarket(market)}
+                        className="rounded-md bg-slate-700 px-3 py-1 text-xs font-semibold text-white hover:bg-slate-800"
+                      >
+                        Edit
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => deleteMarket(market.id)}
+                        className="rounded-md bg-red-700 px-3 py-1 text-xs font-semibold text-white hover:bg-red-800"
+                      >
+                        Delete
+                      </button>
+                    </div>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </section>
+  </>
+)}
+{activeTab === "adminAccess" && (
+  <>
+    <section className="mt-8 rounded-xl bg-white p-6 shadow">
+      <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+        <h2 className="text-xl font-semibold">Admin Roles</h2>
+        <button
+          type="button"
+          onClick={addDefaultAdminRoles}
+          className="rounded-md bg-purple-700 px-3 py-1.5 text-sm font-semibold text-white hover:bg-purple-800"
+        >
+          Add Default Admin Roles
+        </button>
+      </div>
+
+      <form onSubmit={saveAdminRole} className="mb-6 grid gap-4">
+        <div className="grid gap-4 md:grid-cols-2">
+          <label className="grid gap-1">
+            <span className="font-medium">Role Name</span>
+            <input
+              value={adminRoleForm.name}
+              onChange={(e) =>
+                setAdminRoleForm({
+                  ...adminRoleForm,
+                  name: e.target.value,
+                })
+              }
+              placeholder="Example: Risk Manager"
+              className="rounded border p-2 text-gray-900"
+              required
+            />
+          </label>
+
+          <label className="grid gap-1">
+            <span className="font-medium">Description</span>
+            <input
+              value={adminRoleForm.description}
+              onChange={(e) =>
+                setAdminRoleForm({
+                  ...adminRoleForm,
+                  description: e.target.value,
+                })
+              }
+              placeholder="Short role purpose"
+              className="rounded border p-2 text-gray-900"
+            />
+          </label>
+        </div>
+
+        <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+          {ADMIN_PERMISSION_GROUPS.map((group) => (
+            <div key={group.name} className="rounded border bg-gray-50 p-4">
+              <h3 className="mb-3 font-semibold text-gray-900">{group.name}</h3>
+              <div className="grid gap-2">
+                {group.permissions.map((permission) => (
+                  <label
+                    key={permission}
+                    className="flex items-center gap-2 text-sm text-gray-700"
+                  >
+                    <input
+                      type="checkbox"
+                      checked={adminRoleForm.permissions.includes(permission)}
+                      onChange={() => toggleAdminRolePermission(permission)}
+                    />
+                    {permission}
+                  </label>
+                ))}
+              </div>
+            </div>
+          ))}
+        </div>
+
+        <label className="flex items-center gap-2 text-sm font-medium text-gray-700">
+          <input
+            type="checkbox"
+            checked={adminRoleForm.active}
+            onChange={(e) =>
+              setAdminRoleForm({
+                ...adminRoleForm,
+                active: e.target.checked,
+              })
+            }
+          />
+          Active
+        </label>
+
+        <div className="flex flex-wrap gap-2">
+          <button className="rounded bg-blue-700 px-4 py-2 font-semibold text-white hover:bg-blue-800">
+            {editingAdminRoleId ? "Update Role" : "Save Role"}
+          </button>
+          <button
+            type="button"
+            onClick={resetAdminRoleForm}
+            className="rounded bg-gray-200 px-4 py-2 font-semibold text-gray-700 hover:bg-gray-300"
+          >
+            Reset
+          </button>
+          {editingAdminRoleId && (
+            <button
+              type="button"
+              onClick={resetAdminRoleForm}
+              className="rounded bg-slate-200 px-4 py-2 font-semibold text-slate-700 hover:bg-slate-300"
+            >
+              Cancel Edit
+            </button>
+          )}
+        </div>
+      </form>
+
+      {adminRoles.length === 0 ? (
+        <p className="text-sm text-gray-500">No admin roles created yet.</p>
+      ) : (
+        <div className="overflow-x-auto">
+          <table className="w-full text-left text-sm">
+            <thead className="border-b text-xs uppercase text-gray-500">
+              <tr>
+                <th className="py-2 pr-3">Role</th>
+                <th className="py-2 pr-3">Description</th>
+                <th className="py-2 pr-3">Permissions</th>
+                <th className="py-2 pr-3">Active</th>
+                <th className="min-w-[130px] py-2 pr-3">Actions</th>
+              </tr>
+            </thead>
+            <tbody>
+              {adminRoles.map((role) => (
+                <tr key={role.id} className="border-b last:border-0">
+                  <td className="py-2 pr-3 font-medium">{role.name}</td>
+                  <td className="py-2 pr-3">{role.description}</td>
+                  <td className="py-2 pr-3">{role.permissions.length}</td>
+                  <td className="py-2 pr-3">
+                    {role.active ? "Active" : "Inactive"}
+                  </td>
+                  <td className="min-w-[130px] py-2 pr-3">
+                    <div className="flex flex-nowrap items-center gap-2">
+                      <button
+                        type="button"
+                        onClick={() => editAdminRole(role)}
+                        className="rounded-md bg-slate-700 px-3 py-1 text-xs font-semibold text-white hover:bg-slate-800"
+                      >
+                        Edit
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => deleteAdminRole(role.id)}
+                        className="rounded-md bg-red-700 px-3 py-1 text-xs font-semibold text-white hover:bg-red-800"
+                      >
+                        Delete
+                      </button>
+                    </div>
+                  </td>
                 </tr>
               ))}
             </tbody>
@@ -5161,148 +11894,102 @@ Export Risk Exposure </button>
     </section>
 
     <section className="mt-8 rounded-xl bg-white p-6 shadow">
-      <h2 className="mb-4 text-xl font-semibold">Hot Spot Prize Tiers</h2>
+      <h2 className="mb-4 text-xl font-semibold">Admin Users</h2>
 
-      <form onSubmit={saveHotspotTier} className="mb-6 grid gap-4">
-        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+      <form onSubmit={saveAdminUser} className="mb-6 grid gap-4">
+        <div className="grid gap-4 md:grid-cols-3">
           <label className="grid gap-1">
-            <span className="text-sm font-medium">Profile</span>
-            <select
-              value={hotspotTierForm.profileId}
-              onChange={(e) =>
-                setHotspotTierForm({
-                  ...hotspotTierForm,
-                  profileId: e.target.value,
-                })
-              }
-              className="w-full rounded border p-2 text-gray-900"
-              required
-            >
-              <option value="">Select profile</option>
-              {hotspotProfiles.map((profile: any) => (
-                <option key={profile.id} value={profile.id}>
-                  {profile.profile_code}
-                </option>
-              ))}
-            </select>
-          </label>
-
-          <label className="grid gap-1">
-            <span className="text-sm font-medium">spot_count</span>
+            <span className="font-medium">Name</span>
             <input
-              value={hotspotTierForm.spotCount}
+              value={adminUserForm.name}
               onChange={(e) =>
-                setHotspotTierForm({
-                  ...hotspotTierForm,
-                  spotCount: e.target.value,
+                setAdminUserForm({
+                  ...adminUserForm,
+                  name: e.target.value,
                 })
               }
-              className="w-full rounded border p-2 text-gray-900"
+              placeholder="Example: Jane Operator"
+              className="rounded border p-2 text-gray-900"
               required
             />
           </label>
 
           <label className="grid gap-1">
-            <span className="text-sm font-medium">match_count</span>
+            <span className="font-medium">Email</span>
             <input
-              value={hotspotTierForm.matchCount}
+              value={adminUserForm.email}
               onChange={(e) =>
-                setHotspotTierForm({
-                  ...hotspotTierForm,
-                  matchCount: e.target.value,
+                setAdminUserForm({
+                  ...adminUserForm,
+                  email: e.target.value,
                 })
               }
-              className="w-full rounded border p-2 text-gray-900"
+              placeholder="admin@example.com"
+              className="rounded border p-2 text-gray-900"
               required
             />
           </label>
 
           <label className="grid gap-1">
-            <span className="text-sm font-medium">payout_type</span>
+            <span className="font-medium">Status</span>
             <select
-              value={hotspotTierForm.payoutType}
+              value={adminUserForm.status}
               onChange={(e) =>
-                setHotspotTierForm({
-                  ...hotspotTierForm,
-                  payoutType: e.target.value,
+                setAdminUserForm({
+                  ...adminUserForm,
+                  status: e.target.value as AdminUser["status"],
                 })
               }
-              className="w-full rounded border p-2 text-gray-900"
+              className="rounded border p-2 text-gray-900"
             >
-              <option value="fixed">fixed</option>
-              <option value="pari_mutuel">pari_mutuel</option>
-            </select>
-          </label>
-
-          <label className="flex items-center gap-2 text-sm font-medium">
-            <input
-              type="checkbox"
-              checked={hotspotTierForm.bullseyeRequired}
-              onChange={(e) =>
-                setHotspotTierForm({
-                  ...hotspotTierForm,
-                  bullseyeRequired: e.target.checked,
-                })
-              }
-            />
-            bullseye_required
-          </label>
-
-          <label className="grid gap-1">
-            <span className="text-sm font-medium">fixed_payout</span>
-            <input
-              value={hotspotTierForm.fixedPayout}
-              onChange={(e) =>
-                setHotspotTierForm({
-                  ...hotspotTierForm,
-                  fixedPayout: e.target.value,
-                })
-              }
-              className="w-full rounded border p-2 text-gray-900"
-            />
-          </label>
-
-          <label className="grid gap-1">
-            <span className="text-sm font-medium">maximum_payout</span>
-            <input
-              value={hotspotTierForm.maximumPayout}
-              onChange={(e) =>
-                setHotspotTierForm({
-                  ...hotspotTierForm,
-                  maximumPayout: e.target.value,
-                })
-              }
-              className="w-full rounded border p-2 text-gray-900"
-            />
-          </label>
-
-          <label className="grid gap-1">
-            <span className="text-sm font-medium">status</span>
-            <select
-              value={hotspotTierForm.status}
-              onChange={(e) =>
-                setHotspotTierForm({
-                  ...hotspotTierForm,
-                  status: e.target.value,
-                })
-              }
-              className="w-full rounded border p-2 text-gray-900"
-            >
-              <option value="active">active</option>
-              <option value="inactive">inactive</option>
+              <option value="active">Active</option>
+              <option value="suspended">Suspended</option>
+              <option value="inactive">Inactive</option>
             </select>
           </label>
         </div>
 
-        <div className="flex gap-2">
-          <button className="rounded-md bg-blue-700 px-3 py-1.5 text-sm font-semibold text-white hover:bg-blue-800">
-            {editingHotspotTierId ? "Update Tier" : "Create Tier"}
+        <div className="rounded border bg-gray-50 p-4">
+          <h3 className="mb-3 font-semibold text-gray-900">Assigned Roles</h3>
+          {adminRoles.length === 0 ? (
+            <p className="text-sm text-gray-500">
+              Create admin roles before assigning users.
+            </p>
+          ) : (
+            <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
+              {adminRoles.map((role) => (
+                <label
+                  key={role.id}
+                  className="flex items-center gap-2 text-sm text-gray-700"
+                >
+                  <input
+                    type="checkbox"
+                    checked={adminUserForm.roleIds.includes(role.id)}
+                    onChange={() => toggleAdminUserRole(role.id)}
+                  />
+                  {role.name}
+                </label>
+              ))}
+            </div>
+          )}
+        </div>
+
+        <div className="flex flex-wrap gap-2">
+          <button className="rounded bg-blue-700 px-4 py-2 font-semibold text-white hover:bg-blue-800">
+            {editingAdminUserId ? "Update User" : "Save User"}
           </button>
-          {editingHotspotTierId && (
+          <button
+            type="button"
+            onClick={resetAdminUserForm}
+            className="rounded bg-gray-200 px-4 py-2 font-semibold text-gray-700 hover:bg-gray-300"
+          >
+            Reset
+          </button>
+          {editingAdminUserId && (
             <button
               type="button"
-              onClick={resetHotspotTierForm}
-              className="rounded-md bg-gray-200 px-3 py-1.5 text-sm font-semibold text-gray-700 hover:bg-gray-300"
+              onClick={resetAdminUserForm}
+              className="rounded bg-slate-200 px-4 py-2 font-semibold text-slate-700 hover:bg-slate-300"
             >
               Cancel Edit
             </button>
@@ -5310,76 +11997,58 @@ Export Risk Exposure </button>
         </div>
       </form>
 
-      <div className="overflow-x-auto">
-        <table className="w-full text-left text-sm">
-          <thead className="border-b text-xs uppercase text-gray-500">
-            <tr>
-              <th className="py-2 pr-3">profile_code</th>
-              <th className="py-2 pr-3">spot_count</th>
-              <th className="py-2 pr-3">match_count</th>
-              <th className="py-2 pr-3">bullseye_required</th>
-              <th className="py-2 pr-3">payout_type</th>
-              <th className="py-2 pr-3">fixed_payout</th>
-              <th className="py-2 pr-3">maximum_payout</th>
-              <th className="py-2 pr-3">status</th>
-              <th className="py-2 pr-3">Actions</th>
-            </tr>
-          </thead>
-          <tbody>
-            {hotspotTiers.map((tier: any) => (
-              <tr key={tier.id} className="border-b last:border-0">
-                <td className="py-2 pr-3">
-                  {tier.hotspot_prize_profiles?.profile_code || ""}
-                </td>
-                <td className="py-2 pr-3">{tier.spot_count}</td>
-                <td className="py-2 pr-3">{tier.match_count}</td>
-                <td className="py-2 pr-3">
-                  {tier.bullseye_required ? "Yes" : "No"}
-                </td>
-                <td className="py-2 pr-3">{tier.payout_type}</td>
-                <td className="py-2 pr-3">
-                  {tier.fixed_payout === null ? "" : formatMoney(tier.fixed_payout)}
-                </td>
-                <td className="py-2 pr-3">
-                  {tier.maximum_payout === null
-                    ? ""
-                    : formatMoney(tier.maximum_payout)}
-                </td>
-                <td className="py-2 pr-3">{tier.status}</td>
-                <td className="py-2 pr-3">
-                  <div className="flex gap-2">
-                    <button
-                      type="button"
-                      onClick={() => editHotspotTier(tier)}
-                      className="rounded-md bg-slate-700 px-3 py-1 text-xs font-semibold text-white hover:bg-slate-800"
-                    >
-                      Edit
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => toggleHotspotTierStatus(tier)}
-                      className={`rounded-md px-3 py-1 text-xs font-semibold text-white ${
-                        tier.status === "active"
-                          ? "bg-red-700 hover:bg-red-800"
-                          : "bg-green-700 hover:bg-green-800"
-                      }`}
-                    >
-                      {tier.status === "active" ? "Deactivate" : "Activate"}
-                    </button>
-                  </div>
-                </td>
-              </tr>
-            ))}
-            {hotspotTiers.length === 0 && (
+      {adminUsers.length === 0 ? (
+        <p className="text-sm text-gray-500">No admin users created yet.</p>
+      ) : (
+        <div className="overflow-x-auto">
+          <table className="w-full text-left text-sm">
+            <thead className="border-b text-xs uppercase text-gray-500">
               <tr>
-                <td className="py-3 text-sm text-gray-500" colSpan={9}>
-                  No Hot Spot prize tiers found.
-                </td>
+                <th className="py-2 pr-3">Name</th>
+                <th className="py-2 pr-3">Email</th>
+                <th className="py-2 pr-3">Assigned Roles</th>
+                <th className="py-2 pr-3">Status</th>
+                <th className="min-w-[130px] py-2 pr-3">Actions</th>
               </tr>
-            )}
-          </tbody>
-        </table>
-      </div>
+            </thead>
+            <tbody>
+              {adminUsers.map((user) => {
+                const assignedRoles = adminRoles
+                  .filter((role) => user.roleIds.includes(role.id))
+                  .map((role) => role.name)
+                  .join(", ");
+
+                return (
+                  <tr key={user.id} className="border-b last:border-0">
+                    <td className="py-2 pr-3 font-medium">{user.name}</td>
+                    <td className="py-2 pr-3">{user.email}</td>
+                    <td className="py-2 pr-3">{assignedRoles}</td>
+                    <td className="py-2 pr-3">{user.status}</td>
+                    <td className="min-w-[130px] py-2 pr-3">
+                      <div className="flex flex-nowrap items-center gap-2">
+                        <button
+                          type="button"
+                          onClick={() => editAdminUser(user)}
+                          className="rounded-md bg-slate-700 px-3 py-1 text-xs font-semibold text-white hover:bg-slate-800"
+                        >
+                          Edit
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => deleteAdminUser(user.id)}
+                          className="rounded-md bg-red-700 px-3 py-1 text-xs font-semibold text-white hover:bg-red-800"
+                        >
+                          Delete
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      )}
     </section>
   </>
 )}
