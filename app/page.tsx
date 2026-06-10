@@ -2,6 +2,64 @@
 
 import { Fragment, type ReactNode, useEffect, useRef, useState } from "react";
 import { supabase } from "@/app/lib/supabaseClient";
+import {
+  ADMIN_PERMISSION_GROUPS,
+  ALL_ADMIN_PERMISSIONS,
+  type AdminPermission,
+  type AdminRole,
+  type AdminUser,
+} from "@/src/domains/admin-access/admin-access.types";
+import {
+  getAccountTypeLabel,
+} from "@/src/domains/accounts/account.helpers";
+import type {
+  AccountStatus,
+  AccountType,
+  PlayerAccount,
+} from "@/src/domains/accounts/account.types";
+import type {
+  AccountFinancialSummary,
+  LedgerCategory,
+  LedgerTransaction,
+  TransactionType,
+} from "@/src/domains/ledger/ledger.types";
+import {
+  getAccountingTransactionImpact,
+  getFreeplayTransactionImpact,
+  getOperationalTransactionImpact,
+} from "@/src/domains/ledger/ledger.helpers";
+import type { Market } from "@/src/domains/markets/market.types";
+import {
+  generateSettlementRunId,
+} from "@/src/domains/settlement/settlement.helpers";
+import type {
+  SettlementRecord,
+  SettlementRun,
+  SettlementRunStatus,
+} from "@/src/domains/settlement/settlement.types";
+import {
+  generateTicketNumber,
+  isOpenTicketStatus,
+  parseTicketSelectedNumbers,
+} from "@/src/domains/tickets/ticket.helpers";
+import type {
+  Ticket,
+  TicketFundingType,
+  TicketLine,
+  TicketStatus,
+} from "@/src/domains/tickets/ticket.types";
+import {
+  COMPARISON_OPERATORS,
+  KENO_METRIC_KEYS,
+  type ComparisonOperator,
+  type KenoDrawMetrics,
+  type PayTable,
+  type PayTableRow,
+  type SettlementMethod,
+  type WagerOption,
+  type WagerType,
+} from "@/src/domains/wagers/wager.types";
+import { formatMoney } from "@/src/lib/money/format-money";
 
 const states = [
   { code: "AL", name: "Alabama" },
@@ -47,403 +105,6 @@ function getExposureByNumbers(drawing: any) {
 }
 const DEFAULT_TIME_ZONE = "America/New_York";
 const MAX_VISIBLE_BETS = 25;
-const KENO_METRIC_KEYS = [
-  "drawSum",
-  "oddCount",
-  "evenCount",
-  "lowCount",
-  "highCount",
-  "firstHalfCount",
-  "secondHalfCount",
-  "dragonDigit",
-  "tigerDigit",
-  "dragonTigerResult",
-  "upDownResult",
-  "woodCount",
-  "fireCount",
-  "earthCount",
-  "metalCount",
-  "waterCount",
-];
-
-const COMPARISON_OPERATORS = [">", "<", ">=", "<=", "==", "!="] as const;
-
-type SettlementMethod =
-  | "hit_count"
-  | "hit_count_bullseye"
-  | "metric_comparison"
-  | "metric_threshold"
-  | "element_count"
-  | "dragon_tiger"
-  | "selection_match";
-
-type ComparisonOperator = (typeof COMPARISON_OPERATORS)[number];
-
-type PayTableRow = {
-  id: string;
-  spotCount: number;
-  hitCount: number;
-  bullseyeRequired: boolean;
-  payout: number;
-};
-
-type PayTable = {
-  id: string;
-  gameId: string;
-  name: string;
-  active: boolean;
-  effectiveDate: string;
-  rows: PayTableRow[];
-};
-
-type KenoDrawMetrics = {
-  id: string;
-  drawingId: string;
-  gameId: string;
-  drawSum: number;
-  oddCount: number;
-  evenCount: number;
-  lowCount: number;
-  highCount: number;
-  firstHalfCount: number;
-  secondHalfCount: number;
-  minDrawnNumber: number;
-  maxDrawnNumber: number;
-  dragonDigit: number;
-  tigerDigit: number;
-  dragonTigerResult: "dragon" | "tiger" | "tie";
-  upDownResult: "up" | "down" | "tie";
-  bullseyeNumber?: number | null;
-  woodCount: number;
-  fireCount: number;
-  earthCount: number;
-  metalCount: number;
-  waterCount: number;
-  createdAt: string;
-};
-
-type WagerType = {
-  id: string;
-  gameId: string;
-  name: string;
-  code: string;
-  active: boolean;
-  settlementMethod: SettlementMethod;
-  metricKey?: string;
-  comparisonOperator?: ComparisonOperator;
-  thresholdValue?: number | null;
-  payTableId?: string | null;
-  createdAt: string;
-};
-
-type WagerOption = {
-  id: string;
-  wagerTypeId: string;
-  name: string;
-  code: string;
-  active: boolean;
-};
-
-type AdminPermission =
-  | "games.view"
-  | "games.manage"
-  | "draws.view"
-  | "draws.manage"
-  | "results.post"
-  | "results.correct"
-  | "draws.void"
-  | "paytables.view"
-  | "paytables.manage"
-  | "wagers.view"
-  | "wagers.manage"
-  | "players.view"
-  | "players.manage"
-  | "wallets.view"
-  | "wallets.adjust"
-  | "tickets.view"
-  | "tickets.manage"
-  | "settlement.view"
-  | "settlement.run"
-  | "settlement.resettle"
-  | "reports.view"
-  | "reports.export"
-  | "admin_users.view"
-  | "admin_users.manage"
-  | "audit.view"
-  | "risk.view"
-  | "risk.manage"
-  | "rng.view"
-  | "rng.manage"
-  | "pam.view"
-  | "pam.manage";
-
-type AdminRole = {
-  id: string;
-  name: string;
-  description: string;
-  permissions: AdminPermission[];
-  active: boolean;
-  createdAt: string;
-};
-
-type AdminUser = {
-  id: string;
-  name: string;
-  email: string;
-  roleIds: string[];
-  status: "active" | "suspended" | "inactive";
-  createdAt: string;
-};
-
-type Market = {
-  id: string;
-  name: string;
-  code: string;
-  language: string;
-  currency: string;
-  timeZone: string;
-  dateFormat: string;
-  numberFormat: string;
-  defaultBrand: string;
-  active: boolean;
-  createdAt: string;
-};
-
-type AccountType = "super_master" | "master_agent" | "agent" | "player";
-
-type AccountStatus = "active" | "suspended" | "inactive";
-
-type PlayerAccount = {
-  id: string;
-  accountType: AccountType;
-  parentId: string | null;
-  username: string;
-  displayName: string;
-  email?: string;
-  phone?: string;
-  marketId?: string | null;
-  language?: string;
-  currency?: string;
-  status: AccountStatus;
-  cashBalance: number;
-  creditLimit: number;
-  currentExposure: number;
-  availableCredit: number;
-  maxBet?: number;
-  maxPayout?: number;
-  notes?: string;
-  createdAt: string;
-};
-
-type LedgerCategory = "accounting" | "operational" | "freeplay";
-
-type TransactionType =
-  | "deposit"
-  | "withdrawal"
-  | "zero_balance_credit"
-  | "zero_balance_debit"
-  | "transfer_in"
-  | "transfer_out"
-  | "manual_adjustment"
-  | "win"
-  | "loss"
-  | "credit_adjustment"
-  | "debit_adjustment"
-  | "freeplay_win"
-  | "freeplay_grant"
-  | "freeplay_wager"
-  | "freeplay_expiration"
-  | "freeplay_adjustment"
-  | "freeplay_reversal"
-  | "reversal";
-
-type LedgerTransaction = {
-  id: string;
-  accountId: string;
-  category: LedgerCategory;
-  transactionType: TransactionType;
-  amount: number;
-  description: string;
-  referenceId?: string | null;
-  parentTransactionId?: string | null;
-  createdBy?: string | null;
-  createdAt: string;
-};
-
-type AccountFinancialSummary = {
-  accountId: string;
-  accountingBalance: number;
-  weeklyFigure: number;
-  freeplayBalance: number;
-  pendingExposure: number;
-  availableCredit: number;
-};
-
-type TicketStatus =
-  | "pending"
-  | "accepted"
-  | "settled"
-  | "void"
-  | "cancelled"
-  | "resettled";
-
-type TicketLineStatus =
-  | "pending"
-  | "won"
-  | "lost"
-  | "push"
-  | "void"
-  | "cancelled"
-  | "resettled";
-
-type TicketFundingType = "cash" | "credit" | "freeplay";
-
-type Ticket = {
-  id: string;
-  ticketNumber: string;
-  accountId: string;
-  marketId?: string | null;
-  gameId: string;
-  drawingId: string;
-  totalStake: number;
-  potentialPayout: number;
-  fundingType: TicketFundingType;
-  status: TicketStatus;
-  createdAt: string;
-  acceptedAt?: string | null;
-  settledAt?: string | null;
-  ledgerTransactionIds: string[];
-  notes?: string;
-};
-
-type TicketLine = {
-  id: string;
-  ticketId: string;
-  wagerTypeId: string;
-  wagerOptionId?: string | null;
-  selectedNumbers?: number[];
-  stake: number;
-  potentialPayout: number;
-  status: TicketLineStatus;
-  resultAmount?: number | null;
-  createdAt: string;
-};
-
-type SettlementRunStatus =
-  | "pending"
-  | "running"
-  | "completed"
-  | "failed"
-  | "reversed";
-
-type SettlementRecordStatus =
-  | "pending"
-  | "settled"
-  | "reversed"
-  | "failed"
-  | "void";
-
-type SettlementOutcome = "win" | "loss" | "push" | "void";
-
-type SettlementRun = {
-  id: string;
-  drawingId: string;
-  gameId: string;
-  status: SettlementRunStatus;
-  startedAt?: string | null;
-  completedAt?: string | null;
-  processedTicketCount: number;
-  processedLineCount: number;
-  totalStake: number;
-  totalPayout: number;
-  totalNet: number;
-  notes?: string;
-  createdAt: string;
-};
-
-type SettlementRecord = {
-  id: string;
-  settlementRunId: string;
-  ticketId: string;
-  ticketLineId: string;
-  accountId: string;
-  gameId: string;
-  drawingId: string;
-  wagerTypeId: string;
-  wagerOptionId?: string | null;
-  stake: number;
-  payout: number;
-  netAmount: number;
-  outcome: SettlementOutcome;
-  status: SettlementRecordStatus;
-  version: number;
-  previousSettlementRecordId?: string | null;
-  reversalOfSettlementRecordId?: string | null;
-  ledgerTransactionIds: string[];
-  createdAt: string;
-};
-
-const ADMIN_PERMISSION_GROUPS: Array<{
-  name: string;
-  permissions: AdminPermission[];
-}> = [
-  {
-    name: "Games & Draws",
-    permissions: ["games.view", "games.manage", "draws.view", "draws.manage"],
-  },
-  {
-    name: "Results",
-    permissions: ["results.post", "results.correct", "draws.void"],
-  },
-  {
-    name: "Pay Tables & Wagers",
-    permissions: [
-      "paytables.view",
-      "paytables.manage",
-      "wagers.view",
-      "wagers.manage",
-    ],
-  },
-  {
-    name: "Players & Wallets",
-    permissions: [
-      "players.view",
-      "players.manage",
-      "wallets.view",
-      "wallets.adjust",
-    ],
-  },
-  {
-    name: "Tickets & Settlement",
-    permissions: [
-      "tickets.view",
-      "tickets.manage",
-      "settlement.view",
-      "settlement.run",
-      "settlement.resettle",
-    ],
-  },
-  {
-    name: "Reports & Audit",
-    permissions: ["reports.view", "reports.export", "audit.view"],
-  },
-  {
-    name: "Risk",
-    permissions: ["risk.view", "risk.manage"],
-  },
-  {
-    name: "System Integrations",
-    permissions: ["rng.view", "rng.manage", "pam.view", "pam.manage"],
-  },
-  {
-    name: "Admin Management",
-    permissions: ["admin_users.view", "admin_users.manage"],
-  },
-];
-
-const ALL_ADMIN_PERMISSIONS = ADMIN_PERMISSION_GROUPS.flatMap(
-  (group) => group.permissions
-);
 
 
 export default function Home() {
@@ -2797,13 +2458,6 @@ const [selectedGameIndex, setSelectedGameIndex] = useState("");
     setPlayerAccounts([...playerAccounts, ...newAccounts]);
   }
 
-  function getAccountTypeLabel(accountType: AccountType) {
-    if (accountType === "super_master") return "House / Super Master";
-    if (accountType === "master_agent") return "Master Agent";
-    if (accountType === "agent") return "Agent";
-    return "Player";
-  }
-
   function getAllowedChildAccountTypes(accountType: AccountType): AccountType[] {
     if (accountType === "super_master") return ["master_agent"];
     if (accountType === "master_agent") return ["master_agent", "agent"];
@@ -3066,94 +2720,11 @@ const [selectedGameIndex, setSelectedGameIndex] = useState("");
     );
   }
 
-  function getAccountingTransactionImpact(transaction: LedgerTransaction): number {
-    if (transaction.transactionType === "reversal") {
-      const parentTransaction = ledgerTransactions.find(
-        (createdTransaction) => createdTransaction.id === transaction.parentTransactionId
-      );
-
-      return parentTransaction ? -getAccountingTransactionImpact(parentTransaction) : 0;
-    }
-
-    if (
-      [
-        "deposit",
-        "zero_balance_credit",
-        "transfer_in",
-        "manual_adjustment",
-      ].includes(transaction.transactionType)
-    ) {
-      return transaction.amount;
-    }
-
-    if (
-      ["withdrawal", "zero_balance_debit", "transfer_out"].includes(
-        transaction.transactionType
-      )
-    ) {
-      return -transaction.amount;
-    }
-
-    return 0;
-  }
-
-  function getOperationalTransactionImpact(transaction: LedgerTransaction): number {
-    if (transaction.transactionType === "reversal") {
-      const parentTransaction = ledgerTransactions.find(
-        (createdTransaction) => createdTransaction.id === transaction.parentTransactionId
-      );
-
-      return parentTransaction ? -getOperationalTransactionImpact(parentTransaction) : 0;
-    }
-
-    if (
-      ["win", "credit_adjustment", "freeplay_win"].includes(
-        transaction.transactionType
-      )
-    ) {
-      return transaction.amount;
-    }
-
-    if (["loss", "debit_adjustment"].includes(transaction.transactionType)) {
-      return -transaction.amount;
-    }
-
-    return 0;
-  }
-
-  function getFreeplayTransactionImpact(transaction: LedgerTransaction): number {
-    if (transaction.transactionType === "reversal") {
-      const parentTransaction = ledgerTransactions.find(
-        (createdTransaction) => createdTransaction.id === transaction.parentTransactionId
-      );
-
-      return parentTransaction ? -getFreeplayTransactionImpact(parentTransaction) : 0;
-    }
-
-    if (
-      ["freeplay_grant", "freeplay_adjustment", "freeplay_reversal"].includes(
-        transaction.transactionType
-      )
-    ) {
-      return transaction.amount;
-    }
-
-    if (
-      ["freeplay_wager", "freeplay_expiration"].includes(
-        transaction.transactionType
-      )
-    ) {
-      return -transaction.amount;
-    }
-
-    return 0;
-  }
-
   function calculateAccountingBalance(accountId: string) {
     return getAccountLedgerTransactions(accountId).reduce((balance, transaction) => {
       if (transaction.category !== "accounting") return balance;
 
-      return balance + getAccountingTransactionImpact(transaction);
+      return balance + getAccountingTransactionImpact(transaction, ledgerTransactions);
     }, 0);
   }
 
@@ -3161,7 +2732,7 @@ const [selectedGameIndex, setSelectedGameIndex] = useState("");
     return getAccountLedgerTransactions(accountId).reduce((figure, transaction) => {
       if (transaction.category !== "operational") return figure;
 
-      return figure + getOperationalTransactionImpact(transaction);
+      return figure + getOperationalTransactionImpact(transaction, ledgerTransactions);
     }, 0);
   }
 
@@ -3169,7 +2740,7 @@ const [selectedGameIndex, setSelectedGameIndex] = useState("");
     return getAccountLedgerTransactions(accountId).reduce((balance, transaction) => {
       if (transaction.category !== "freeplay") return balance;
 
-      return balance + getFreeplayTransactionImpact(transaction);
+      return balance + getFreeplayTransactionImpact(transaction, ledgerTransactions);
     }, 0);
   }
 
@@ -3282,10 +2853,6 @@ const [selectedGameIndex, setSelectedGameIndex] = useState("");
       );
   }
 
-  function generateTicketNumber() {
-    return `TICKET-${Date.now()}`;
-  }
-
   function getTicketLines(ticketId: string) {
     return ticketLines.filter((line) => line.ticketId === ticketId);
   }
@@ -3302,10 +2869,6 @@ const [selectedGameIndex, setSelectedGameIndex] = useState("");
       (total, line) => total + Number(line.potentialPayout || 0),
       0
     );
-  }
-
-  function isOpenTicketStatus(status: TicketStatus) {
-    return status === "pending" || status === "accepted";
   }
 
   function calculatePendingExposureForAccount(accountId: string) {
@@ -3330,21 +2893,6 @@ const [selectedGameIndex, setSelectedGameIndex] = useState("");
         total + calculatePendingExposureForAccount(currentAccountId),
       0
     );
-  }
-
-  function parseTicketSelectedNumbers(value: string) {
-    const trimmedValue = value.trim();
-
-    if (!trimmedValue) {
-      return undefined;
-    }
-
-    const numbers = trimmedValue
-      .split(/[,-]/)
-      .map((number) => Number(number.trim()))
-      .filter((number) => Number.isInteger(number));
-
-    return numbers.length > 0 ? numbers : undefined;
   }
 
   function addDraftTicketLine() {
@@ -3500,10 +3048,6 @@ const [selectedGameIndex, setSelectedGameIndex] = useState("");
         };
       })
     );
-  }
-
-  function generateSettlementRunId() {
-    return `SETTLEMENT-RUN-${Date.now()}`;
   }
 
   function getSettlementRecordsForRun(settlementRunId: string) {
@@ -4743,14 +4287,6 @@ if (maxLiability > 0 && worstCase > maxLiability) {
   );
 
 
-}
-function formatMoney(value: any) {
-  return new Intl.NumberFormat("en-US", {
-    style: "currency",
-    currency: "USD",
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 2,
-  }).format(Number(value || 0));
 }
 function toggleBetDetails(betId: string) {
   setExpandedBetIds((prev) =>
