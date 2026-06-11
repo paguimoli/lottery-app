@@ -437,7 +437,116 @@ Rules:
 - Each line settles independently.
 - Ticket-level status is derived from line outcomes and workflow state.
 
-## 8. Financial Ledger
+## 8. RNG / PRNG Result Sources
+
+### Tables
+
+- `rng_providers`
+- `rng_requests`
+- `rng_results`
+
+### Supported Result Source Modes
+
+The platform supports these result source modes:
+
+- `internal_prng`
+- `external_rng_service`
+- `official_results_feed`
+- `manual_result_entry`
+
+These modes allow different games to use internal generated results, certified third-party RNG providers, official external feeds, or controlled manual result entry.
+
+### `rng_providers`
+
+Purpose: stores configured RNG/result-source providers without storing raw secrets.
+
+Core fields:
+
+- `id`
+- `name`
+- `provider_type`: `internal`, `third_party`, `official_feed`, `manual`
+- `status`: `active`, `inactive`, `suspended`
+- `endpoint_url`
+- `api_key_reference`
+- `certification_reference`
+- `version`
+- `notes`
+- `created_at`
+- `updated_at`
+
+Rules:
+
+- Never store raw API secrets in normal database fields.
+- Store only secret references such as `api_key_reference`.
+- Third-party RNG providers require endpoint URL configuration.
+- Official feed providers require endpoint URL or feed reference configuration.
+- Manual providers do not require endpoint URL.
+- Suspended providers cannot be used for new RNG requests.
+
+### `rng_requests`
+
+Purpose: records requests made to internal or external result sources.
+
+Core fields:
+
+- `id`
+- `provider_id`
+- `game_id`
+- `drawing_id`
+- `request_status`: `pending`, `completed`, `failed`, `cancelled`
+- `requested_at`
+- `completed_at`
+- `idempotency_key`
+- `raw_request`
+- `raw_response`
+- `error_message`
+- `created_at`
+
+Rules:
+
+- RNG requests must be idempotent.
+- `idempotency_key` must be unique for the intended provider/game/drawing execution.
+- Raw request/response fields are audit artifacts and must not contain raw secrets.
+- Failed and cancelled requests must be preserved for audit.
+
+### `rng_results`
+
+Purpose: stores generated or imported result payloads before or during official result posting.
+
+Core fields:
+
+- `id`
+- `provider_id`
+- `request_id`
+- `game_id`
+- `drawing_id`
+- `winning_numbers`
+- `bullseye_number`
+- `result_hash`
+- `created_at`
+
+Rules:
+
+- RNG results must be auditable.
+- Bullseye number, when present, must be one of the winning numbers.
+- Official results become immutable once posted to `drawing_results`.
+- Internal PRNG, external RNG service, official feed, and manual entry are all supported modes.
+- RNG results should feed official result posting through controlled workflow, not direct table edits.
+
+### Integrity Notes
+
+Reserved fields where applicable:
+
+- `record_hash`
+- `previous_hash`
+- `signature`
+- `signature_key_id`
+- `signature_version`
+- `signed_at`
+
+Public/private signing remains Phase 4.8 after schemas and canonical payload formats stabilize.
+
+## 9. Financial Ledger
 
 ### Tables
 
@@ -492,7 +601,7 @@ Critical rules:
 - `parent_transaction_id` links reversal transactions to originals.
 - Weekly figure must be calculated from transactions, not stored as mutable balance.
 
-## 9. Settlement
+## 10. Settlement
 
 ### Tables
 
@@ -562,7 +671,7 @@ Rules:
 - Reversal records must not delete original records.
 - Ledger linkage must be explicit.
 
-## 10. Audit
+## 11. Audit
 
 ### Tables
 
@@ -596,7 +705,7 @@ Rules:
 - Sensitive actions must require reason codes.
 - Approval metadata is required for resettlement, result correction, hierarchy moves, wallet adjustments, and overrides.
 
-## 11. Admin Access
+## 12. Admin Access
 
 ### Tables
 
@@ -652,7 +761,7 @@ Rules:
 - Result correction requires explicit permission.
 - Admin user management requires explicit permission.
 
-## 12. Integrity & Security Fields
+## 13. Integrity & Security Fields
 
 Reserved fields for critical tables:
 
@@ -669,6 +778,8 @@ Critical tables:
 - `ticket_lines`
 - `ledger_transactions`
 - `drawing_results`
+- `rng_requests`
+- `rng_results`
 - `settlement_runs`
 - `settlement_records`
 - `audit_logs`
@@ -696,7 +807,7 @@ Reason:
 - Tickets are immutable once accepted and should be individually hashed at the acceptance boundary.
 - Public/private signing remains Phase 4.8, near the end of pre-production hardening, because signing depends on stable final schemas and canonical payload formats.
 
-## 13. Database Constraints
+## 14. Database Constraints
 
 Required constraints:
 
@@ -710,6 +821,7 @@ Required constraints:
 - Unique ticket idempotency key.
 - One active paytable for the same game, wager type, and effective period.
 - One completed settlement per drawing.
+- Unique RNG request idempotency key.
 - Foreign keys between all major records.
 - No ticket edits after accepted.
 - No ticket acceptance after cutoff.
@@ -728,7 +840,7 @@ Implementation notes:
 - Status transitions should be constrained by controlled functions or API workflows.
 - Critical mutations should use stored procedures or transactional application services.
 
-## 14. Indexes
+## 15. Indexes
 
 Important indexes:
 
@@ -740,6 +852,11 @@ Important indexes:
 - `drawings(draw_code)`
 - `drawing_results(drawing_id, status)`
 - `keno_draw_metrics(drawing_id)`
+- `rng_providers(provider_type, status)`
+- `rng_requests(provider_id, idempotency_key)`
+- `rng_requests(game_id, drawing_id)`
+- `rng_results(drawing_id)`
+- `rng_results(request_id)`
 - `tickets(drawing_id)`
 - `tickets(account_id, created_at)`
 - `tickets(ticket_number)`
@@ -755,7 +872,7 @@ Important indexes:
 - `pay_tables(game_id, wager_type_id, active)`
 - `pay_table_rows(pay_table_id, spot_count, hit_count)`
 
-## 15. Future Phase 4.x Hardening Roadmap
+## 16. Future Phase 4.x Hardening Roadmap
 
 ### 4.1 Database Hardening
 
@@ -820,7 +937,7 @@ Important indexes:
 - Store `signature`, `signature_key_id`, `signature_version`, and `signed_at`.
 - Build verification tooling for audits and dispute resolution.
 
-## 16. Locked Production Decisions
+## 17. Locked Production Decisions
 
 ### Username Uniqueness Scope
 
