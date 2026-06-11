@@ -26,6 +26,7 @@ export type SettlementMethod =
   | "metric_threshold"
   | "element_count"
   | "dragon_tiger"
+  | "up_down"
   | "selection_match";
 
 export type ComparisonOperator = (typeof COMPARISON_OPERATORS)[number];
