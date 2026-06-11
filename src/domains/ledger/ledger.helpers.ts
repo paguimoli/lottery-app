@@ -50,16 +50,26 @@ export function getOperationalTransactionImpact(
       : 0;
   }
 
+  if (["win", "loss"].includes(transaction.transactionType)) {
+    return transaction.transactionType === "win"
+      ? transaction.amount
+      : -transaction.amount;
+  }
+
   if (
-    ["win", "credit_adjustment", "freeplay_win"].includes(
-      transaction.transactionType
-    )
+    [
+      "bet_stake",
+      "bet_win",
+      "freeplay_win",
+      "credit_adjustment",
+      "settlement_reversal",
+    ].includes(transaction.transactionType)
   ) {
     return transaction.amount;
   }
 
-  if (["loss", "debit_adjustment"].includes(transaction.transactionType)) {
-    return -transaction.amount;
+  if (transaction.transactionType === "debit_adjustment") {
+    return transaction.amount < 0 ? transaction.amount : -transaction.amount;
   }
 
   return 0;

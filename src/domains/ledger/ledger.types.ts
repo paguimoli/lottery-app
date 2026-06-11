@@ -8,6 +8,8 @@ export type TransactionType =
   | "transfer_in"
   | "transfer_out"
   | "manual_adjustment"
+  | "bet_stake"
+  | "bet_win"
   | "win"
   | "loss"
   | "credit_adjustment"
@@ -18,6 +20,7 @@ export type TransactionType =
   | "freeplay_expiration"
   | "freeplay_adjustment"
   | "freeplay_reversal"
+  | "settlement_reversal"
   | "reversal";
 
 export type LedgerTransaction = {

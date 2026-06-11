@@ -9,12 +9,17 @@ export function validateLedgerTransactionForm(form: {
   description: string;
 }) {
   const amount = Number(form.amount || 0);
+  const signedTransactionTypes = ["bet_stake", "settlement_reversal"];
 
   if (!form.accountId || !form.category || !form.transactionType) {
     return invalid("Please select account, category, and transaction type.");
   }
 
-  if (Number.isNaN(amount) || amount <= 0) {
+  if (Number.isNaN(amount) || amount === 0) {
+    return invalid("Please enter a non-zero numeric amount.");
+  }
+
+  if (!signedTransactionTypes.includes(form.transactionType) && amount <= 0) {
     return invalid("Please enter a positive numeric amount.");
   }
 

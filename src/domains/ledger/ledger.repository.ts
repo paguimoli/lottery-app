@@ -20,3 +20,10 @@ export function saveLedgerTransaction(
 ) {
   return [...transactions, transaction];
 }
+
+export function saveLedgerTransactions(
+  transactions: LedgerTransaction[],
+  newTransactions: LedgerTransaction[]
+) {
+  return [...transactions, ...newTransactions];
+}

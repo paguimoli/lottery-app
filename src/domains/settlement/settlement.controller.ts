@@ -2,6 +2,8 @@ import {
   controllerFailure,
   controllerSuccess,
 } from "@/src/lib/controller/controller.types";
+import { saveLedgerTransactions } from "../ledger/ledger.repository";
+import type { LedgerTransaction } from "../ledger/ledger.types";
 import type { Ticket, TicketLine } from "../tickets/ticket.types";
 import type {
   KenoDrawMetrics,
@@ -17,6 +19,7 @@ import {
 } from "./settlement.repository";
 import { executeSettlementRun } from "./settlement-engine.service";
 import { canResumeSettlementRun, resumeSettlementRun } from "./settlement-recovery.service";
+import { createLedgerTransactionsForSettlementRecords } from "./settlement-ledger.service";
 import {
   applySettlementRunStatusTransition,
   buildPlaceholderSettlementRecords,
@@ -33,6 +36,21 @@ import {
   validateSettlementRunCreation,
   validateSettlementStatusTransition,
 } from "./settlement.validation";
+
+function mergeSettlementRecordsForRun({
+  records,
+  settlementRunId,
+  runRecords,
+}: {
+  records: SettlementRecord[];
+  settlementRunId: string;
+  runRecords: SettlementRecord[];
+}) {
+  return [
+    ...records.filter((record) => record.settlementRunId !== settlementRunId),
+    ...runRecords,
+  ];
+}
 
 export function createSettlementRunController({
   drawingId,
@@ -176,6 +194,7 @@ export function executeSettlementRunController({
   bullseyeNumber,
   drawMetrics,
   officialResultPostedAt,
+  ledgerTransactions = [],
 }: {
   settlementRunId: string;
   runs: SettlementRun[];
@@ -189,6 +208,7 @@ export function executeSettlementRunController({
   bullseyeNumber?: number | null;
   drawMetrics?: KenoDrawMetrics | null;
   officialResultPostedAt?: string | null;
+  ledgerTransactions?: LedgerTransaction[];
 }) {
   const run = findSettlementRunById(runs, settlementRunId);
 
@@ -210,6 +230,15 @@ export function executeSettlementRunController({
     drawMetrics,
     officialResultPostedAt,
     existingSettlementRecords: records,
+  });
+  const runRecords = records.filter(
+    (record) => record.settlementRunId === run.id
+  );
+  const ledgerPosting = createLedgerTransactionsForSettlementRecords({
+    settlementRecords: [...runRecords, ...execution.settlementRecords],
+    tickets: execution.updatedTickets,
+    ticketLines: execution.updatedTicketLines,
+    existingLedgerTransactions: ledgerTransactions,
   });
   const completedRun: SettlementRun = {
     ...run,
@@ -236,11 +265,23 @@ export function executeSettlementRunController({
   };
 
   return controllerSuccess({
-    execution,
+    execution: {
+      ...execution,
+      settlementRecords: ledgerPosting.settlementRecords,
+    },
     runs: updateSettlementRun(runs, completedRun),
-    records: saveSettlementRecords(records, execution.settlementRecords),
+    records: mergeSettlementRecordsForRun({
+      records,
+      settlementRunId: run.id,
+      runRecords: ledgerPosting.settlementRecords,
+    }),
     tickets: execution.updatedTickets,
     ticketLines: execution.updatedTicketLines,
+    ledgerTransactions: saveLedgerTransactions(
+      ledgerTransactions,
+      ledgerPosting.ledgerTransactions
+    ),
+    newLedgerTransactions: ledgerPosting.ledgerTransactions,
   });
 }
 
@@ -257,6 +298,7 @@ export function resumeSettlementRunController({
   bullseyeNumber,
   drawMetrics,
   officialResultPostedAt,
+  ledgerTransactions = [],
 }: {
   settlementRunId: string;
   runs: SettlementRun[];
@@ -270,6 +312,7 @@ export function resumeSettlementRunController({
   bullseyeNumber?: number | null;
   drawMetrics?: KenoDrawMetrics | null;
   officialResultPostedAt?: string | null;
+  ledgerTransactions?: LedgerTransaction[];
 }) {
   const run = findSettlementRunById(runs, settlementRunId);
 
@@ -296,6 +339,15 @@ export function resumeSettlementRunController({
     officialResultPostedAt,
     existingSettlementRecords: records,
   });
+  const runRecords = records.filter(
+    (record) => record.settlementRunId === run.id
+  );
+  const ledgerPosting = createLedgerTransactionsForSettlementRecords({
+    settlementRecords: [...runRecords, ...execution.settlementRecords],
+    tickets: execution.updatedTickets,
+    ticketLines: execution.updatedTicketLines,
+    existingLedgerTransactions: ledgerTransactions,
+  });
   const nextRun: SettlementRun = {
     ...run,
     status: execution.summary.status,
@@ -321,10 +373,22 @@ export function resumeSettlementRunController({
   };
 
   return controllerSuccess({
-    execution,
+    execution: {
+      ...execution,
+      settlementRecords: ledgerPosting.settlementRecords,
+    },
     runs: updateSettlementRun(runs, nextRun),
-    records: saveSettlementRecords(records, execution.settlementRecords),
+    records: mergeSettlementRecordsForRun({
+      records,
+      settlementRunId: run.id,
+      runRecords: ledgerPosting.settlementRecords,
+    }),
     tickets: execution.updatedTickets,
     ticketLines: execution.updatedTicketLines,
+    ledgerTransactions: saveLedgerTransactions(
+      ledgerTransactions,
+      ledgerPosting.ledgerTransactions
+    ),
+    newLedgerTransactions: ledgerPosting.ledgerTransactions,
   });
 }

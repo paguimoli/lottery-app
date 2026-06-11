@@ -2243,6 +2243,8 @@ const [selectedGameIndex, setSelectedGameIndex] = useState("");
 
     if (category === "operational") {
       return [
+        "bet_stake",
+        "bet_win",
         "win",
         "loss",
         "credit_adjustment",
@@ -2258,6 +2260,14 @@ const [selectedGameIndex, setSelectedGameIndex] = useState("");
       "freeplay_adjustment",
       "freeplay_reversal",
     ];
+  }
+
+  function getTransactionTypeLabel(transactionType: TransactionType) {
+    if (transactionType === "bet_stake") return "Stake";
+    if (transactionType === "bet_win") return "Win";
+    if (transactionType === "freeplay_win") return "Freeplay Win";
+
+    return transactionType;
   }
 
   function getAccountLedgerTransactions(accountId: string) {
@@ -2342,6 +2352,8 @@ const [selectedGameIndex, setSelectedGameIndex] = useState("");
     const statementTypes: TransactionType[] = [
       "deposit",
       "withdrawal",
+      "bet_stake",
+      "bet_win",
       "win",
       "loss",
       "credit_adjustment",
@@ -8935,7 +8947,7 @@ Export Risk Exposure </button>
                       {getTransactionTypesForCategory(ledgerForm.category).map(
                         (transactionType) => (
                           <option key={transactionType} value={transactionType}>
-                            {transactionType}
+                            {getTransactionTypeLabel(transactionType)}
                           </option>
                         )
                       )}
@@ -9063,7 +9075,7 @@ Export Risk Exposure </button>
                               </td>
                               <td className="py-2 pr-3">{transaction.category}</td>
                               <td className="py-2 pr-3">
-                                {transaction.transactionType}
+                                {getTransactionTypeLabel(transaction.transactionType)}
                               </td>
                               <td className="py-2 pr-3">
                                 {transaction.description}
@@ -9143,7 +9155,7 @@ Export Risk Exposure </button>
                                 {new Date(transaction.createdAt).toLocaleString()}
                               </td>
                               <td className="py-2 pr-3">
-                                {transaction.transactionType}
+                                {getTransactionTypeLabel(transaction.transactionType)}
                               </td>
                               <td className="py-2 pr-3">
                                 {transaction.description}

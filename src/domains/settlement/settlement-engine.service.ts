@@ -28,3 +28,9 @@ export {
   isSettlementRunComplete,
   resumeSettlementRun,
 } from "./settlement-recovery.service";
+
+export {
+  createLedgerTransactionsForSettlementRecord,
+  createLedgerTransactionsForSettlementRecords,
+  type SettlementLedgerPostingResult,
+} from "./settlement-ledger.service";
