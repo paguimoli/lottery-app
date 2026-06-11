@@ -3,6 +3,9 @@ export type SettlementRunStatus =
   | "running"
   | "completed"
   | "failed"
+  | "cancelled"
+  | "partially_completed"
+  | "recovering"
   | "reversed";
 
 export type SettlementRecordStatus =
@@ -19,13 +22,25 @@ export type SettlementRun = {
   drawingId: string;
   gameId: string;
   status: SettlementRunStatus;
+  expectedTicketCount: number;
+  expectedLineCount: number;
   startedAt?: string | null;
   completedAt?: string | null;
+  executionId?: string | null;
   processedTicketCount: number;
   processedLineCount: number;
+  winCount: number;
+  lossCount: number;
+  pushCount: number;
+  failedCount: number;
   totalStake: number;
   totalPayout: number;
   totalNet: number;
+  durationMs: number;
+  ticketsPerSecond: number;
+  linesPerSecond: number;
+  drawToSettlementMs?: number | null;
+  peakConcurrentSettlements: number;
   notes?: string;
   createdAt: string;
 };

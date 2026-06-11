@@ -15,7 +15,15 @@ import type {
   SettlementRecord,
   SettlementRecordStatus,
   SettlementRun,
+  SettlementRunStatus,
 } from "./settlement.types";
+
+export type SettlementExecutionError = {
+  ticketId: string;
+  ticketLineId: string;
+  message: string;
+  timestamp: string;
+};
 
 export type SettlementExecutionInput = {
   settlementRun: SettlementRun;
@@ -31,12 +39,17 @@ export type SettlementExecutionInput = {
   drawMetrics?: KenoDrawMetrics | null;
   officialResultPostedAt?: string | null;
   existingSettlementRecords?: SettlementRecord[];
+  executionId?: string | null;
 };
 
 export type SettlementExecutionSummary = {
   settlementRunId: string;
   drawingId: string;
   gameId: string;
+  executionId: string;
+  status: SettlementRunStatus;
+  expectedTicketCount: number;
+  expectedLineCount: number;
   processedTicketCount: number;
   processedLineCount: number;
   winCount: number;
@@ -52,6 +65,7 @@ export type SettlementExecutionSummary = {
   ticketsPerSecond: number;
   linesPerSecond: number;
   drawToSettlementMs?: number | null;
+  peakConcurrentSettlements: number;
 };
 
 export type SettlementExecutionResult = {
@@ -60,6 +74,7 @@ export type SettlementExecutionResult = {
   updatedTickets: Ticket[];
   updatedTicketLines: TicketLine[];
   errors: string[];
+  executionErrors: SettlementExecutionError[];
 };
 
 const FINAL_LINE_STATUSES: TicketLineStatus[] = [
@@ -119,6 +134,50 @@ function mapEvaluationToLineStatus(
   return null;
 }
 
+function mapRecordToLineStatus(record: SettlementRecord): TicketLineStatus | null {
+  if (record.outcome === "win") {
+    return "won";
+  }
+
+  if (record.outcome === "loss") {
+    return "lost";
+  }
+
+  if (record.outcome === "push") {
+    return "push";
+  }
+
+  if (record.outcome === "void") {
+    return "void";
+  }
+
+  return null;
+}
+
+function getRunStatusFromSummary({
+  expectedTicketCount,
+  expectedLineCount,
+  processedTicketCount,
+  processedLineCount,
+  failedCount,
+}: {
+  expectedTicketCount: number;
+  expectedLineCount: number;
+  processedTicketCount: number;
+  processedLineCount: number;
+  failedCount: number;
+}): SettlementRunStatus {
+  if (
+    processedTicketCount === expectedTicketCount &&
+    processedLineCount === expectedLineCount &&
+    failedCount === 0
+  ) {
+    return "completed";
+  }
+
+  return "partially_completed";
+}
+
 function calculateRate(count: number, durationMs: number) {
   if (durationMs <= 0) {
     return count;
@@ -152,7 +211,11 @@ export function executeSettlementRun(
 ): SettlementExecutionResult {
   const startedAtDate = new Date();
   const startedAt = startedAtDate.toISOString();
+  const executionId =
+    input.executionId ||
+    `SETTLEMENT-EXECUTION-${input.settlementRun.id}-${startedAtDate.getTime()}`;
   const errors: string[] = [];
+  const executionErrors: SettlementExecutionError[] = [];
   const eligibleTickets = input.tickets.filter(
     (ticket) =>
       ticket.drawingId === input.drawingId &&
@@ -160,13 +223,26 @@ export function executeSettlementRun(
       ticket.status === "accepted"
   );
   const eligibleTicketIds = new Set(eligibleTickets.map((ticket) => ticket.id));
+  const expectedTicketCount = eligibleTickets.length;
+  const expectedLineCount = input.ticketLines.filter((line) =>
+    eligibleTicketIds.has(line.ticketId)
+  ).length;
+  const existingRunRecords = (input.existingSettlementRecords || []).filter(
+    (record) => record.settlementRunId === input.settlementRun.id
+  );
   const existingRecordLineIds = new Set(
-    (input.existingSettlementRecords || [])
-      .filter((record) => record.settlementRunId === input.settlementRun.id)
-      .map((record) => record.ticketLineId)
+    existingRunRecords.map((record) => record.ticketLineId)
   );
   const lineStatusUpdates = new Map<string, TicketLineStatus>();
   const settlementRecords: SettlementRecord[] = [];
+
+  for (const record of existingRunRecords) {
+    const existingLineStatus = mapRecordToLineStatus(record);
+
+    if (existingLineStatus) {
+      lineStatusUpdates.set(record.ticketLineId, existingLineStatus);
+    }
+  }
 
   // Performance targets:
   // Rapid Draw: 25 second draw interval, 5 second lockout, settle under 5 seconds.
@@ -214,9 +290,15 @@ export function executeSettlementRun(
       if (lineStatus) {
         lineStatusUpdates.set(line.id, lineStatus);
       } else {
-        errors.push(
-          `Ticket line ${line.id} failed settlement evaluation and remains pending.`
-        );
+        const message = `Ticket line ${line.id} failed settlement evaluation and remains pending.`;
+
+        errors.push(message);
+        executionErrors.push({
+          ticketId: ticket.id,
+          ticketLineId: line.id,
+          message,
+          timestamp: startedAt,
+        });
       }
 
       settlementRecords.push({
@@ -245,11 +327,13 @@ export function executeSettlementRun(
         ledgerTransactionIds: [],
         createdAt: startedAt,
       });
+      existingRecordLineIds.add(line.id);
     }
   }
 
   const completedAtDate = new Date();
   const completedAt = completedAtDate.toISOString();
+  const allRunRecords = [...existingRunRecords, ...settlementRecords];
   const updatedTicketLines = input.ticketLines.map((line) => {
     const nextStatus = lineStatusUpdates.get(line.id);
 
@@ -262,7 +346,7 @@ export function executeSettlementRun(
       status: nextStatus,
       resultAmount:
         nextStatus === "won"
-          ? settlementRecords.find((record) => record.ticketLineId === line.id)
+          ? allRunRecords.find((record) => record.ticketLineId === line.id)
               ?.payout ?? line.resultAmount
           : nextStatus === "lost"
             ? 0
@@ -292,38 +376,53 @@ export function executeSettlementRun(
     };
   });
   const durationMs = completedAtDate.getTime() - startedAtDate.getTime();
-  const winCount = settlementRecords.filter(
+  const processedTicketCount = new Set(
+    allRunRecords.map((record) => record.ticketId)
+  ).size;
+  const processedLineCount = allRunRecords.length;
+  const winCount = allRunRecords.filter(
     (record) => record.outcome === "win"
   ).length;
-  const lossCount = settlementRecords.filter(
+  const lossCount = allRunRecords.filter(
     (record) => record.outcome === "loss"
   ).length;
-  const pushCount = settlementRecords.filter(
+  const pushCount = allRunRecords.filter(
     (record) => record.outcome === "push"
   ).length;
-  const failedCount = settlementRecords.filter(
+  const failedCount = allRunRecords.filter(
     (record) => record.outcome === "failed"
   ).length;
-  const totalStake = settlementRecords.reduce(
+  const totalStake = allRunRecords.reduce(
     (total, record) => total + Number(record.stake || 0),
     0
   );
-  const totalPayout = settlementRecords.reduce(
+  const totalPayout = allRunRecords.reduce(
     (total, record) => total + Number(record.payout || 0),
     0
   );
-  const totalNet = settlementRecords.reduce(
+  const totalNet = allRunRecords.reduce(
     (total, record) => total + Number(record.netAmount || 0),
     0
   );
+  const status = getRunStatusFromSummary({
+    expectedTicketCount,
+    expectedLineCount,
+    processedTicketCount,
+    processedLineCount,
+    failedCount,
+  });
 
   return {
     summary: {
       settlementRunId: input.settlementRun.id,
       drawingId: input.drawingId,
       gameId: input.gameId,
-      processedTicketCount: eligibleTickets.length,
-      processedLineCount: settlementRecords.length,
+      executionId,
+      status,
+      expectedTicketCount,
+      expectedLineCount,
+      processedTicketCount,
+      processedLineCount,
       winCount,
       lossCount,
       pushCount,
@@ -334,16 +433,18 @@ export function executeSettlementRun(
       startedAt,
       completedAt,
       durationMs,
-      ticketsPerSecond: calculateRate(eligibleTickets.length, durationMs),
-      linesPerSecond: calculateRate(settlementRecords.length, durationMs),
+      ticketsPerSecond: calculateRate(processedTicketCount, durationMs),
+      linesPerSecond: calculateRate(processedLineCount, durationMs),
       drawToSettlementMs: calculateDrawToSettlementMs({
         officialResultPostedAt: input.officialResultPostedAt,
         completedAt: completedAtDate,
       }),
+      peakConcurrentSettlements: 1,
     },
     settlementRecords,
     updatedTickets,
     updatedTicketLines,
     errors,
+    executionErrors,
   };
 }

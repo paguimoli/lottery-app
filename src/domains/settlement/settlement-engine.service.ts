@@ -14,7 +14,17 @@ export function evaluateTicketLines(
 
 export {
   executeSettlementRun,
+  type SettlementExecutionError,
   type SettlementExecutionInput,
   type SettlementExecutionResult,
   type SettlementExecutionSummary,
 } from "./settlement-executor.service";
+
+export {
+  canResumeSettlementRun,
+  generateSettlementExecutionId,
+  getIncompleteSettlementRuns,
+  hasExistingSettlementRecord,
+  isSettlementRunComplete,
+  resumeSettlementRun,
+} from "./settlement-recovery.service";

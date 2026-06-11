@@ -75,13 +75,25 @@ export function buildSettlementRunPayload({
     drawingId,
     gameId,
     status: "pending",
+    expectedTicketCount: 0,
+    expectedLineCount: 0,
     startedAt: null,
     completedAt: null,
+    executionId: null,
     processedTicketCount: 0,
     processedLineCount: 0,
+    winCount: 0,
+    lossCount: 0,
+    pushCount: 0,
+    failedCount: 0,
     totalStake: 0,
     totalPayout: 0,
     totalNet: 0,
+    durationMs: 0,
+    ticketsPerSecond: 0,
+    linesPerSecond: 0,
+    drawToSettlementMs: null,
+    peakConcurrentSettlements: 0,
     notes: notes.trim(),
     createdAt: new Date().toISOString(),
   };
@@ -152,13 +164,35 @@ export function canTransitionSettlementRunStatus(
 
   if (nextStatus === "completed") {
     return (
-      run.status === "running" &&
+      (run.status === "running" || run.status === "recovering") &&
       !hasExistingCompletedSettlementForDrawing(runs, run.drawingId, run.id)
     );
   }
 
   if (nextStatus === "failed") {
-    return run.status === "pending" || run.status === "running";
+    return (
+      run.status === "pending" ||
+      run.status === "running" ||
+      run.status === "recovering" ||
+      run.status === "partially_completed"
+    );
+  }
+
+  if (nextStatus === "cancelled") {
+    return (
+      run.status === "pending" ||
+      run.status === "running" ||
+      run.status === "recovering" ||
+      run.status === "partially_completed"
+    );
+  }
+
+  if (nextStatus === "partially_completed") {
+    return run.status === "running" || run.status === "recovering";
+  }
+
+  if (nextStatus === "recovering") {
+    return run.status !== "completed" && run.status !== "cancelled";
   }
 
   if (nextStatus === "reversed") {

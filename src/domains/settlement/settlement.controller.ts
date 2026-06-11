@@ -16,6 +16,7 @@ import {
   updateSettlementRun,
 } from "./settlement.repository";
 import { executeSettlementRun } from "./settlement-engine.service";
+import { canResumeSettlementRun, resumeSettlementRun } from "./settlement-recovery.service";
 import {
   applySettlementRunStatusTransition,
   buildPlaceholderSettlementRecords,
@@ -212,19 +213,116 @@ export function executeSettlementRunController({
   });
   const completedRun: SettlementRun = {
     ...run,
-    status: "completed",
+    status: execution.summary.status,
+    expectedTicketCount: execution.summary.expectedTicketCount,
+    expectedLineCount: execution.summary.expectedLineCount,
     startedAt: execution.summary.startedAt,
     completedAt: execution.summary.completedAt,
+    executionId: execution.summary.executionId,
     processedTicketCount: execution.summary.processedTicketCount,
     processedLineCount: execution.summary.processedLineCount,
+    winCount: execution.summary.winCount,
+    lossCount: execution.summary.lossCount,
+    pushCount: execution.summary.pushCount,
+    failedCount: execution.summary.failedCount,
     totalStake: execution.summary.totalStake,
     totalPayout: execution.summary.totalPayout,
     totalNet: execution.summary.totalNet,
+    durationMs: execution.summary.durationMs,
+    ticketsPerSecond: execution.summary.ticketsPerSecond,
+    linesPerSecond: execution.summary.linesPerSecond,
+    drawToSettlementMs: execution.summary.drawToSettlementMs,
+    peakConcurrentSettlements: execution.summary.peakConcurrentSettlements,
   };
 
   return controllerSuccess({
     execution,
     runs: updateSettlementRun(runs, completedRun),
+    records: saveSettlementRecords(records, execution.settlementRecords),
+    tickets: execution.updatedTickets,
+    ticketLines: execution.updatedTicketLines,
+  });
+}
+
+export function resumeSettlementRunController({
+  settlementRunId,
+  runs,
+  records,
+  tickets,
+  ticketLines,
+  wagerTypes,
+  wagerOptions,
+  payTableRows,
+  winningNumbers,
+  bullseyeNumber,
+  drawMetrics,
+  officialResultPostedAt,
+}: {
+  settlementRunId: string;
+  runs: SettlementRun[];
+  records: SettlementRecord[];
+  tickets: Ticket[];
+  ticketLines: TicketLine[];
+  wagerTypes: WagerType[];
+  wagerOptions: WagerOption[];
+  payTableRows: PayTableRow[];
+  winningNumbers: number[];
+  bullseyeNumber?: number | null;
+  drawMetrics?: KenoDrawMetrics | null;
+  officialResultPostedAt?: string | null;
+}) {
+  const run = findSettlementRunById(runs, settlementRunId);
+
+  if (!run) {
+    return controllerFailure("Settlement run not found.");
+  }
+
+  if (!canResumeSettlementRun(run)) {
+    return controllerFailure("Settlement run cannot be resumed.");
+  }
+
+  const execution = resumeSettlementRun({
+    settlementRun: run,
+    drawingId: run.drawingId,
+    gameId: run.gameId,
+    tickets,
+    ticketLines,
+    wagerTypes,
+    wagerOptions,
+    payTableRows,
+    winningNumbers,
+    bullseyeNumber,
+    drawMetrics,
+    officialResultPostedAt,
+    existingSettlementRecords: records,
+  });
+  const nextRun: SettlementRun = {
+    ...run,
+    status: execution.summary.status,
+    expectedTicketCount: execution.summary.expectedTicketCount,
+    expectedLineCount: execution.summary.expectedLineCount,
+    startedAt: execution.summary.startedAt,
+    completedAt: execution.summary.completedAt,
+    executionId: execution.summary.executionId,
+    processedTicketCount: execution.summary.processedTicketCount,
+    processedLineCount: execution.summary.processedLineCount,
+    winCount: execution.summary.winCount,
+    lossCount: execution.summary.lossCount,
+    pushCount: execution.summary.pushCount,
+    failedCount: execution.summary.failedCount,
+    totalStake: execution.summary.totalStake,
+    totalPayout: execution.summary.totalPayout,
+    totalNet: execution.summary.totalNet,
+    durationMs: execution.summary.durationMs,
+    ticketsPerSecond: execution.summary.ticketsPerSecond,
+    linesPerSecond: execution.summary.linesPerSecond,
+    drawToSettlementMs: execution.summary.drawToSettlementMs,
+    peakConcurrentSettlements: execution.summary.peakConcurrentSettlements,
+  };
+
+  return controllerSuccess({
+    execution,
+    runs: updateSettlementRun(runs, nextRun),
     records: saveSettlementRecords(records, execution.settlementRecords),
     tickets: execution.updatedTickets,
     ticketLines: execution.updatedTicketLines,
