@@ -1,4 +1,5 @@
 import { generateSettlementRunId } from "./settlement.helpers";
+import { attachIntegrityHash } from "../integrity/integrity.helpers";
 import type {
   SettlementRecord,
   SettlementRun,
@@ -70,8 +71,10 @@ export function buildSettlementRunPayload({
   gameId: string;
   notes: string;
 }): SettlementRun {
-  return {
-    id: generateSettlementRunId(),
+  const id = generateSettlementRunId();
+
+  return attachIntegrityHash({
+    id,
     drawingId,
     gameId,
     status: "pending",
@@ -96,7 +99,7 @@ export function buildSettlementRunPayload({
     peakConcurrentSettlements: 0,
     notes: notes.trim(),
     createdAt: new Date().toISOString(),
-  };
+  }, "settlement_run", id);
 }
 
 export function buildPlaceholderSettlementRecords({
@@ -120,8 +123,10 @@ export function buildPlaceholderSettlementRecords({
         (acceptedTicket) => acceptedTicket.id === line.ticketId
       );
 
-      return {
-        id: `SETTLEMENT-RECORD-${Date.now()}-${index}`,
+      const id = `SETTLEMENT-RECORD-${Date.now()}-${index}`;
+
+      return attachIntegrityHash({
+        id,
         settlementRunId: run.id,
         ticketId: line.ticketId,
         ticketLineId: line.id,
@@ -140,7 +145,7 @@ export function buildPlaceholderSettlementRecords({
         reversalOfSettlementRecordId: null,
         ledgerTransactionIds: [],
         createdAt,
-      };
+      }, "settlement_record", id);
     });
 
   return {
@@ -222,7 +227,7 @@ export function applySettlementRunStatusTransition({
     getSettlementRecordsForRun(records, run.id)
   );
 
-  return {
+  return attachIntegrityHash({
     ...run,
     ...totals,
     status: nextStatus,
@@ -231,7 +236,7 @@ export function applySettlementRunStatusTransition({
       nextStatus === "completed" || nextStatus === "failed"
         ? now
         : run.completedAt,
-  };
+  }, "settlement_run", run.id, run.previousHash || null);
 }
 
 export function reverseSettlementRecords(
@@ -240,12 +245,12 @@ export function reverseSettlementRecords(
 ) {
   return records.map((record) =>
     record.settlementRunId === settlementRunId
-      ? {
+      ? attachIntegrityHash({
           ...record,
           status: "reversed",
           reversalOfSettlementRecordId:
             record.reversalOfSettlementRecordId || record.id,
-        }
+        }, "settlement_record", record.id, record.previousHash || null)
       : record
   );
 }

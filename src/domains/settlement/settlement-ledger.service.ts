@@ -1,5 +1,6 @@
 import type { LedgerTransaction } from "../ledger/ledger.types";
 import type { Ticket, TicketLine } from "../tickets/ticket.types";
+import { attachIntegrityHash } from "../integrity/integrity.helpers";
 import type { SettlementRecord } from "./settlement.types";
 
 export type SettlementLedgerPostingResult = {
@@ -24,8 +25,10 @@ function buildSettlementLedgerTransaction({
   description: string;
   index: number;
 }): LedgerTransaction {
-  return {
-    id: `LEDGER-${settlementRecord.id}-${ticketLine.id}-${transactionType}-${index}`,
+  const id = `LEDGER-${settlementRecord.id}-${ticketLine.id}-${transactionType}-${index}`;
+
+  return attachIntegrityHash({
+    id,
     accountId: settlementRecord.accountId,
     category: "operational",
     transactionType,
@@ -35,7 +38,7 @@ function buildSettlementLedgerTransaction({
     parentTransactionId: null,
     createdBy: "settlement",
     createdAt: new Date().toISOString(),
-  };
+  }, "ledger_transaction", id);
 }
 
 function hasPostedSettlementLedger(settlementRecord: SettlementRecord) {
@@ -139,7 +142,7 @@ export function createLedgerTransactionsForSettlementRecord({
     }
 
     return {
-      settlementRecord: {
+      settlementRecord: attachIntegrityHash({
         ...settlementRecord,
         ledgerTransactionIds: getLedgerIdsForSettlementRecord({
           settlementRecord,
@@ -147,7 +150,7 @@ export function createLedgerTransactionsForSettlementRecord({
           existingLedgerTransactions,
           newLedgerTransactions: ledgerTransactions,
         }),
-      },
+      }, "settlement_record", settlementRecord.id, settlementRecord.previousHash || null),
       ledgerTransactions,
     };
   }
@@ -200,7 +203,7 @@ export function createLedgerTransactionsForSettlementRecord({
   // TODO: add a database unique constraint on
   // settlementRecord.id + transactionType + ticketLine.id.
   return {
-    settlementRecord: {
+    settlementRecord: attachIntegrityHash({
       ...settlementRecord,
       ledgerTransactionIds: getLedgerIdsForSettlementRecord({
         settlementRecord,
@@ -208,7 +211,7 @@ export function createLedgerTransactionsForSettlementRecord({
         existingLedgerTransactions,
         newLedgerTransactions: ledgerTransactions,
       }),
-    },
+    }, "settlement_record", settlementRecord.id, settlementRecord.previousHash || null),
     ledgerTransactions,
   };
 }

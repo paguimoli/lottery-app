@@ -1,11 +1,12 @@
 import type { AuditEvent, CreateAuditEventInput } from "./audit.types";
+import { attachIntegrityHash } from "../integrity/integrity.helpers";
 
 export function generateAuditEventId() {
   return `AUDIT-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 }
 
 export function buildAuditEvent(input: CreateAuditEventInput): AuditEvent {
-  return {
+  const event: AuditEvent = {
     id: generateAuditEventId(),
     entityType: input.entityType,
     entityId: input.entityId,
@@ -19,6 +20,8 @@ export function buildAuditEvent(input: CreateAuditEventInput): AuditEvent {
     metadata: input.metadata,
     createdAt: new Date().toISOString(),
   };
+
+  return attachIntegrityHash(event, "audit_event", event.id);
 }
 
 export function createAuditEvent(input: CreateAuditEventInput) {

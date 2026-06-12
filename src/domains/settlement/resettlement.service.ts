@@ -1,4 +1,5 @@
 import type { LedgerTransaction } from "../ledger/ledger.types";
+import { attachIntegrityHash } from "../integrity/integrity.helpers";
 import { executeSettlementRun } from "./settlement-executor.service";
 import { createLedgerTransactionsForSettlementRecords } from "./settlement-ledger.service";
 import type { SettlementRecord } from "./settlement.types";
@@ -62,30 +63,39 @@ export function createSettlementReversalRecords({
           originalRecordId: record.id,
         })
     )
-    .map((record): SettlementRecord => ({
-      id: createReversalSettlementRecordId({
+    .map((record): SettlementRecord => {
+      const id = createReversalSettlementRecordId({
         resettlementRunId,
         originalRecordId: record.id,
-      }),
-      settlementRunId: resettlementRunId,
-      ticketId: record.ticketId,
-      ticketLineId: record.ticketLineId,
-      accountId: record.accountId,
-      gameId: record.gameId,
-      drawingId: record.drawingId,
-      wagerTypeId: record.wagerTypeId,
-      wagerOptionId: record.wagerOptionId || null,
-      stake: record.stake,
-      payout: -Number(record.payout || 0),
-      netAmount: -Number(record.netAmount || 0),
-      outcome: record.outcome,
-      status: "reversed",
-      version: record.version + 1,
-      previousSettlementRecordId: record.id,
-      reversalOfSettlementRecordId: record.id,
-      ledgerTransactionIds: [],
-      createdAt,
-    }));
+      });
+
+      return attachIntegrityHash(
+        {
+          id,
+          settlementRunId: resettlementRunId,
+          ticketId: record.ticketId,
+          ticketLineId: record.ticketLineId,
+          accountId: record.accountId,
+          gameId: record.gameId,
+          drawingId: record.drawingId,
+          wagerTypeId: record.wagerTypeId,
+          wagerOptionId: record.wagerOptionId || null,
+          stake: record.stake,
+          payout: -Number(record.payout || 0),
+          netAmount: -Number(record.netAmount || 0),
+          outcome: record.outcome,
+          status: "reversed",
+          version: record.version + 1,
+          previousSettlementRecordId: record.id,
+          reversalOfSettlementRecordId: record.id,
+          ledgerTransactionIds: [],
+          createdAt,
+        },
+        "settlement_record",
+        id,
+        record.recordHash || null
+      );
+    });
 }
 
 export function createLedgerReversalsForSettlementRecords({
@@ -121,18 +131,27 @@ export function createLedgerReversalsForSettlementRecords({
         continue;
       }
 
-      reversals.push({
-        id: `LEDGER-SETTLEMENT-REVERSAL-${transaction.id}`,
-        accountId: transaction.accountId,
-        category: transaction.category,
-        transactionType: "settlement_reversal",
-        amount: -Number(transaction.amount || 0),
-        description: `Reversal of settlement transaction ${transaction.id}`,
-        referenceId: reversalSettlementRecord?.id || settlementRecord.id,
-        parentTransactionId: transaction.id,
-        createdBy: "resettlement",
-        createdAt: new Date().toISOString(),
-      });
+      const id = `LEDGER-SETTLEMENT-REVERSAL-${transaction.id}`;
+
+      reversals.push(
+        attachIntegrityHash(
+          {
+            id,
+            accountId: transaction.accountId,
+            category: transaction.category,
+            transactionType: "settlement_reversal",
+            amount: -Number(transaction.amount || 0),
+            description: `Reversal of settlement transaction ${transaction.id}`,
+            referenceId: reversalSettlementRecord?.id || settlementRecord.id,
+            parentTransactionId: transaction.id,
+            createdBy: "resettlement",
+            createdAt: new Date().toISOString(),
+          },
+          "ledger_transaction",
+          id,
+          transaction.recordHash || null
+        )
+      );
     }
   }
 
@@ -146,12 +165,19 @@ function attachLedgerIdsToSettlementRecords({
   settlementRecords: SettlementRecord[];
   ledgerTransactions: LedgerTransaction[];
 }) {
-  return settlementRecords.map((record) => ({
-    ...record,
-    ledgerTransactionIds: ledgerTransactions
-      .filter((transaction) => transaction.referenceId === record.id)
-      .map((transaction) => transaction.id),
-  }));
+  return settlementRecords.map((record) =>
+    attachIntegrityHash(
+      {
+        ...record,
+        ledgerTransactionIds: ledgerTransactions
+          .filter((transaction) => transaction.referenceId === record.id)
+          .map((transaction) => transaction.id),
+      },
+      "settlement_record",
+      record.id,
+      record.previousHash || null
+    )
+  );
 }
 
 export function createCorrectedSettlementRecords({
@@ -167,12 +193,17 @@ export function createCorrectedSettlementRecords({
       ticketLineId: record.ticketLineId,
     });
 
-    return {
-      ...record,
-      version: previousRecord ? previousRecord.version + 1 : record.version,
-      previousSettlementRecordId: previousRecord?.id || null,
-      reversalOfSettlementRecordId: null,
-    };
+    return attachIntegrityHash(
+      {
+        ...record,
+        version: previousRecord ? previousRecord.version + 1 : record.version,
+        previousSettlementRecordId: previousRecord?.id || null,
+        reversalOfSettlementRecordId: null,
+      },
+      "settlement_record",
+      record.id,
+      previousRecord?.recordHash || null
+    );
   });
 }
 

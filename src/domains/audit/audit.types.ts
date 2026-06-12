@@ -12,6 +12,9 @@ export type AuditEvent = {
   reasonCode?: string | null;
   approvalId?: string | null;
   metadata?: Record<string, unknown>;
+  recordHash?: string | null;
+  previousHash?: string | null;
+  hashVersion?: string | null;
   createdAt: string;
 };
 
@@ -62,6 +65,10 @@ export const AUDIT_ACTIONS = {
   OVERRIDE_REQUEST_CREATED: "OVERRIDE_REQUEST_CREATED",
   OVERRIDE_REQUEST_APPROVED: "OVERRIDE_REQUEST_APPROVED",
   OVERRIDE_REQUEST_REJECTED: "OVERRIDE_REQUEST_REJECTED",
+
+  INTEGRITY_VERIFIED: "INTEGRITY_VERIFIED",
+  INTEGRITY_FAILED: "INTEGRITY_FAILED",
+  HASH_CHAIN_BROKEN: "HASH_CHAIN_BROKEN",
 } as const;
 
 export type AuditAction = (typeof AUDIT_ACTIONS)[keyof typeof AUDIT_ACTIONS];

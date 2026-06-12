@@ -5,6 +5,8 @@ import { executeResettlement } from "./resettlement.service";
 import type { ResettlementExecutionInput } from "./resettlement.types";
 
 export function executeResettlementController(input: ResettlementExecutionInput) {
+  // TODO Phase 5.10 integration: require canExecuteResettlementAuthorization()
+  // once authenticated actor context is available at controller boundaries.
   const result = executeResettlement(input);
 
   if (!result.success) {

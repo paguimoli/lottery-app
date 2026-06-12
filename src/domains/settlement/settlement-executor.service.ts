@@ -1,4 +1,5 @@
 import type { Ticket, TicketLine, TicketLineStatus } from "../tickets/ticket.types";
+import { attachIntegrityHash } from "../integrity/integrity.helpers";
 import type {
   KenoDrawMetrics,
   PayTableRow,
@@ -301,12 +302,18 @@ export function executeSettlementRun(
         });
       }
 
-      settlementRecords.push({
-        id: createSettlementRecordId({
+      const recordId = createSettlementRecordId({
           settlementRunId: input.settlementRun.id,
           ticketLineId: line.id,
           index: settlementRecords.length,
-        }),
+        });
+      const previousHash =
+        settlementRecords[settlementRecords.length - 1]?.recordHash ||
+        existingRunRecords[existingRunRecords.length - 1]?.recordHash ||
+        null;
+
+      settlementRecords.push(attachIntegrityHash({
+        id: recordId,
         settlementRunId: input.settlementRun.id,
         ticketId: line.ticketId,
         ticketLineId: line.id,
@@ -326,7 +333,7 @@ export function executeSettlementRun(
         // TODO Phase 5.5: create idempotent operational ledger entries here.
         ledgerTransactionIds: [],
         createdAt: startedAt,
-      });
+      }, "settlement_record", recordId, previousHash));
       existingRecordLineIds.add(line.id);
     }
   }

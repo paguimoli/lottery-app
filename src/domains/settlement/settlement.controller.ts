@@ -4,6 +4,7 @@ import {
 } from "@/src/lib/controller/controller.types";
 import { createAuditEvent } from "../audit/audit.service";
 import { AUDIT_ACTIONS } from "../audit/audit.types";
+import { attachIntegrityHash } from "../integrity/integrity.helpers";
 import { saveLedgerTransactions } from "../ledger/ledger.repository";
 import type { LedgerTransaction } from "../ledger/ledger.types";
 import type { Ticket, TicketLine } from "../tickets/ticket.types";
@@ -272,7 +273,7 @@ export function executeSettlementRunController({
     ticketLines: execution.updatedTicketLines,
     existingLedgerTransactions: ledgerTransactions,
   });
-  const completedRun: SettlementRun = {
+  const completedRun: SettlementRun = attachIntegrityHash({
     ...run,
     status: execution.summary.status,
     expectedTicketCount: execution.summary.expectedTicketCount,
@@ -294,7 +295,7 @@ export function executeSettlementRunController({
     linesPerSecond: execution.summary.linesPerSecond,
     drawToSettlementMs: execution.summary.drawToSettlementMs,
     peakConcurrentSettlements: execution.summary.peakConcurrentSettlements,
-  };
+  }, "settlement_run", run.id, run.previousHash || null);
 
   return controllerSuccess({
     execution: {
@@ -410,7 +411,7 @@ export function resumeSettlementRunController({
     ticketLines: execution.updatedTicketLines,
     existingLedgerTransactions: ledgerTransactions,
   });
-  const nextRun: SettlementRun = {
+  const nextRun: SettlementRun = attachIntegrityHash({
     ...run,
     status: execution.summary.status,
     expectedTicketCount: execution.summary.expectedTicketCount,
@@ -432,7 +433,7 @@ export function resumeSettlementRunController({
     linesPerSecond: execution.summary.linesPerSecond,
     drawToSettlementMs: execution.summary.drawToSettlementMs,
     peakConcurrentSettlements: execution.summary.peakConcurrentSettlements,
-  };
+  }, "settlement_run", run.id, run.previousHash || null);
 
   return controllerSuccess({
     execution: {

@@ -33,6 +33,9 @@ export type Ticket = {
   settledAt?: string | null;
   ledgerTransactionIds: string[];
   notes?: string;
+  recordHash?: string | null;
+  previousHash?: string | null;
+  hashVersion?: string | null;
 };
 
 export type TicketLine = {
@@ -45,5 +48,8 @@ export type TicketLine = {
   potentialPayout: number;
   status: TicketLineStatus;
   resultAmount?: number | null;
+  recordHash?: string | null;
+  previousHash?: string | null;
+  hashVersion?: string | null;
   createdAt: string;
 };

@@ -29,6 +29,9 @@ export type OverrideApproval = {
   approvedBy?: string | null;
   status: OverrideApprovalStatus;
   reasonCode: string;
+  recordHash?: string | null;
+  previousHash?: string | null;
+  hashVersion?: string | null;
   createdAt: string;
   approvedAt?: string | null;
 };

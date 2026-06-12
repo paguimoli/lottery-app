@@ -33,6 +33,9 @@ export type LedgerTransaction = {
   referenceId?: string | null;
   parentTransactionId?: string | null;
   createdBy?: string | null;
+  recordHash?: string | null;
+  previousHash?: string | null;
+  hashVersion?: string | null;
   createdAt: string;
 };
 

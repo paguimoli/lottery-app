@@ -1,4 +1,5 @@
 import { generateTicketNumber, parseTicketSelectedNumbers } from "./ticket.helpers";
+import { attachIntegrityHash } from "../integrity/integrity.helpers";
 import type {
   Ticket,
   TicketFundingType,
@@ -106,7 +107,7 @@ export function buildTestTicketPayload({
   const createdAt = new Date().toISOString();
   const totalStake = calculateTicketTotalStake(draftLines);
   const potentialPayout = calculateTicketPotentialPayout(draftLines);
-  const ticket: Ticket = {
+  const ticket: Ticket = attachIntegrityHash({
     id: ticketId,
     ticketNumber: generateTicketNumber(),
     accountId: form.accountId,
@@ -122,13 +123,17 @@ export function buildTestTicketPayload({
     settledAt: null,
     ledgerTransactionIds: [],
     notes: form.notes.trim(),
-  };
-  const lines: TicketLine[] = draftLines.map((line, index) => ({
-    ...line,
-    id: `TICKET-LINE-${Date.now()}-${index}`,
-    ticketId,
-    createdAt,
-  }));
+  }, "ticket", ticketId);
+  const lines: TicketLine[] = draftLines.map((line, index) => {
+    const lineId = `TICKET-LINE-${Date.now()}-${index}`;
+
+    return attachIntegrityHash({
+      ...line,
+      id: lineId,
+      ticketId,
+      createdAt,
+    }, "ticket_line", lineId);
+  });
 
   return {
     ok: true,

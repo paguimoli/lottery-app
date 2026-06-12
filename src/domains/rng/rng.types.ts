@@ -54,5 +54,8 @@ export type RngResult = {
   winningNumbers: number[];
   bullseyeNumber?: number | null;
   resultHash?: string | null;
+  recordHash?: string | null;
+  previousHash?: string | null;
+  hashVersion?: string | null;
   createdAt: string;
 };

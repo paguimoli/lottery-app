@@ -42,6 +42,9 @@ export type SettlementRun = {
   drawToSettlementMs?: number | null;
   peakConcurrentSettlements: number;
   notes?: string;
+  recordHash?: string | null;
+  previousHash?: string | null;
+  hashVersion?: string | null;
   createdAt: string;
 };
 
@@ -64,5 +67,8 @@ export type SettlementRecord = {
   previousSettlementRecordId?: string | null;
   reversalOfSettlementRecordId?: string | null;
   ledgerTransactionIds: string[];
+  recordHash?: string | null;
+  previousHash?: string | null;
+  hashVersion?: string | null;
   createdAt: string;
 };

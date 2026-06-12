@@ -4,6 +4,7 @@ import {
   generateRngRequestId,
   generateRngResultId,
 } from "./rng.helpers";
+import { attachIntegrityHash } from "../integrity/integrity.helpers";
 import type {
   RngProvider,
   RngProviderStatus,
@@ -109,8 +110,10 @@ export function createRngResultPayload(form: {
   bullseyeNumber?: number | null;
   resultHash?: string | null;
 }) {
-  return {
-    id: generateRngResultId(),
+  const id = generateRngResultId();
+
+  return attachIntegrityHash({
+    id,
     providerId: form.providerId,
     requestId: form.requestId,
     gameId: form.gameId,
@@ -119,5 +122,5 @@ export function createRngResultPayload(form: {
     bullseyeNumber: form.bullseyeNumber ?? null,
     resultHash: form.resultHash || null,
     createdAt: new Date().toISOString(),
-  } satisfies RngResult;
+  }, "rng_result", id) satisfies RngResult;
 }

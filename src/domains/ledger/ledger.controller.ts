@@ -4,6 +4,7 @@ import {
 } from "@/src/lib/controller/controller.types";
 import { createAuditEvent } from "../audit/audit.service";
 import { AUDIT_ACTIONS } from "../audit/audit.types";
+import { attachIntegrityHash } from "../integrity/integrity.helpers";
 import { saveLedgerTransaction } from "./ledger.repository";
 import type { LedgerTransaction } from "./ledger.types";
 import {
@@ -26,14 +27,17 @@ export function createLedgerTransactionController({
   };
   transactions: LedgerTransaction[];
 }) {
+  // TODO Phase 5.10 integration: require ledger.adjust authorization for
+  // manual adjustments once authenticated actor context is available.
   const validation = validateLedgerTransactionForm(form);
 
   if (!validation.valid) {
     return controllerFailure(validation.errors);
   }
 
-  const transaction: LedgerTransaction = {
-    id: `LEDGER-${Date.now()}`,
+  const transactionId = `LEDGER-${Date.now()}`;
+  const transaction: LedgerTransaction = attachIntegrityHash({
+    id: transactionId,
     accountId: form.accountId,
     category: form.category,
     transactionType: form.transactionType,
@@ -43,7 +47,7 @@ export function createLedgerTransactionController({
     parentTransactionId: null,
     createdBy: form.createdBy.trim() || null,
     createdAt: new Date().toISOString(),
-  };
+  }, "ledger_transaction", transactionId);
 
   return controllerSuccess({
     transaction,
@@ -79,8 +83,9 @@ export function reverseLedgerTransactionController({
     return controllerFailure(validation.errors);
   }
 
-  const reversal: LedgerTransaction = {
-    id: `LEDGER-${Date.now()}-REVERSAL`,
+  const reversalId = `LEDGER-${Date.now()}-REVERSAL`;
+  const reversal: LedgerTransaction = attachIntegrityHash({
+    id: reversalId,
     accountId: transaction.accountId,
     category: transaction.category,
     transactionType: "reversal",
@@ -90,7 +95,7 @@ export function reverseLedgerTransactionController({
     parentTransactionId: transaction.id,
     createdBy: createdBy.trim() || "admin",
     createdAt: new Date().toISOString(),
-  };
+  }, "ledger_transaction", reversalId, transaction.recordHash || null);
 
   return controllerSuccess({
     reversal,
