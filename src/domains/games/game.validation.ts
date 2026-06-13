@@ -1,7 +1,9 @@
 import { invalid, valid } from "@/src/lib/validation/validation.types";
-import { parseAvailableSpots } from "./game.service";
+import { normalizeGameFormInput, parseAvailableSpots } from "./game.service";
 
-export function validateGameForm(form: any) {
+export function validateGameForm(input: unknown) {
+  const form = normalizeGameFormInput(input);
+
   if (form.gameType === "keno_style") {
     const numberRangeMin = Number(form.numberRangeMin || 0);
     const numberRangeMax = Number(form.numberRangeMax || 0);

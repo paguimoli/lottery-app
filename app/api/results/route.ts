@@ -11,8 +11,8 @@ type ResultRequestBody = {
   sourceReference?: string;
 };
 
-function isMissingString(value: unknown) {
-  return typeof value !== "string" || value.trim() === "";
+function isNonEmptyString(value: unknown): value is string {
+  return typeof value === "string" && value.trim() !== "";
 }
 
 function jsonError(message: string, status: number) {
@@ -28,15 +28,15 @@ export async function POST(request: Request) {
     return jsonError("Invalid JSON body.", 400);
   }
 
-  if (isMissingString(body.organizationExternalId)) {
+  if (!isNonEmptyString(body.organizationExternalId)) {
     return jsonError("organizationExternalId is required.", 400);
   }
 
-  if (isMissingString(body.drawingExternalId)) {
+  if (!isNonEmptyString(body.drawingExternalId)) {
     return jsonError("drawingExternalId is required.", 400);
   }
 
-  if (isMissingString(body.winningNumbers)) {
+  if (!isNonEmptyString(body.winningNumbers)) {
     return jsonError("winningNumbers is required.", 400);
   }
 

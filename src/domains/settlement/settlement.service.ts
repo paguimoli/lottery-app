@@ -242,15 +242,24 @@ export function applySettlementRunStatusTransition({
 export function reverseSettlementRecords(
   records: SettlementRecord[],
   settlementRunId: string
-) {
-  return records.map((record) =>
-    record.settlementRunId === settlementRunId
-      ? attachIntegrityHash({
-          ...record,
-          status: "reversed",
-          reversalOfSettlementRecordId:
-            record.reversalOfSettlementRecordId || record.id,
-        }, "settlement_record", record.id, record.previousHash || null)
-      : record
-  );
+): SettlementRecord[] {
+  return records.map((record): SettlementRecord => {
+    if (record.settlementRunId !== settlementRunId) {
+      return record;
+    }
+
+    const reversedRecord: SettlementRecord = {
+      ...record,
+      status: "reversed",
+      reversalOfSettlementRecordId:
+        record.reversalOfSettlementRecordId || record.id,
+    };
+
+    return attachIntegrityHash(
+      reversedRecord,
+      "settlement_record",
+      record.id,
+      record.previousHash || null
+    );
+  });
 }

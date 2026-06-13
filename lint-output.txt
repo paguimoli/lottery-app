@@ -1,0 +1,36 @@
+
+> lottery-app@0.1.0 lint
+> eslint
+
+
+/Users/PedroAguilar/Desktop/lottery-app/app/page.tsx
+  6595:49  error    Unexpected any. Specify a different type                          @typescript-eslint/no-explicit-any
+  6738:29  error    Unexpected any. Specify a different type                          @typescript-eslint/no-explicit-any
+  6902:35  error    Unexpected any. Specify a different type                          @typescript-eslint/no-explicit-any
+  7036:42  error    Unexpected any. Specify a different type                          @typescript-eslint/no-explicit-any
+  7038:33  error    Unexpected any. Specify a different type                          @typescript-eslint/no-explicit-any
+  7268:33  error    Unexpected any. Specify a different type                          @typescript-eslint/no-explicit-any
+  7339:33  error    Unexpected any. Specify a different type                          @typescript-eslint/no-explicit-any
+  7501:33  error    Unexpected any. Specify a different type                          @typescript-eslint/no-explicit-any
+  7650:29  error    Unexpected any. Specify a different type                          @typescript-eslint/no-explicit-any
+  7717:44  error    Unexpected any. Specify a different type                          @typescript-eslint/no-explicit-any
+  7719:35  error    Unexpected any. Specify a different type                          @typescript-eslint/no-explicit-any
+  7775:29  error    `'` can be escaped with `&apos;`, `&lsquo;`, `&#39;`, `&rsquo;`   react/no-unescaped-entities
+  7791:36  error    Unexpected any. Specify a different type                          @typescript-eslint/no-explicit-any
+  7986:41  error    Unexpected any. Specify a different type                          @typescript-eslint/no-explicit-any
+  8009:43  error    Unexpected any. Specify a different type                          @typescript-eslint/no-explicit-any
+  8016:47  error    Unexpected any. Specify a different type                          @typescript-eslint/no-explicit-any
+  8021:40  error    Unexpected any. Specify a different type                          @typescript-eslint/no-explicit-any
+  8262:41  error    Unexpected any. Specify a different type                          @typescript-eslint/no-explicit-any
+  8266:44  error    Unexpected any. Specify a different type                          @typescript-eslint/no-explicit-any
+  8414:21  error    Unexpected any. Specify a different type                          @typescript-eslint/no-explicit-any
+  8464:47  error    Unexpected any. Specify a different type                          @typescript-eslint/no-explicit-any
+  8552:44  error    Unexpected any. Specify a different type                          @typescript-eslint/no-explicit-any
+  8556:41  error    Unexpected any. Specify a different type                          @typescript-eslint/no-explicit-any
+  8814:15  warning  'selectedAccountTransactions' is assigned a value but never used  @typescript-eslint/no-unused-vars
+
+/Users/PedroAguilar/Desktop/lottery-app/src/lib/money/format-money.ts
+  1:36  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+
+✖ 25 problems (24 errors, 1 warning)
+

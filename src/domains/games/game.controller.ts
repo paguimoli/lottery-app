@@ -2,37 +2,50 @@ import {
   controllerFailure,
   controllerSuccess,
 } from "@/src/lib/controller/controller.types";
+import type { ControllerResult } from "@/src/lib/controller/controller.types";
 import { saveGame, updateGame } from "./game.repository";
 import { buildGamePayload } from "./game.service";
+import type { GameRecord } from "./game.types";
 import { validateGameForm } from "./game.validation";
 
-export function validateAndNormalizeGameController(form: any) {
+type NormalizedGameControllerData<TGame> = {
+  game: TGame;
+};
+
+type GameMutationControllerData<TGame> = {
+  game: TGame;
+  games: TGame[];
+};
+
+export function validateAndNormalizeGameController<TGame extends GameRecord = GameRecord>(
+  form: unknown
+): ControllerResult<NormalizedGameControllerData<TGame>> {
   const validation = validateGameForm(form);
 
   if (!validation.valid) {
     return controllerFailure(validation.errors);
   }
 
-  const result = buildGamePayload(form);
+  const result = buildGamePayload<TGame>(form);
 
-  if (!result.ok || !result.payload) {
+  if (!result.ok) {
     return controllerFailure(result.message);
   }
 
   return controllerSuccess({ game: result.payload });
 }
 
-export function createGameController({
+export function createGameController<TGame extends GameRecord = GameRecord>({
   games,
   form,
 }: {
-  games: any[];
-  form: any;
-}) {
-  const result = validateAndNormalizeGameController(form);
+  games: TGame[];
+  form: unknown;
+}): ControllerResult<GameMutationControllerData<TGame>> {
+  const result = validateAndNormalizeGameController<TGame>(form);
 
   if (!result.success || !result.data) {
-    return result;
+    return controllerFailure(result.errors || "Game validation failed.");
   }
 
   return controllerSuccess({
@@ -41,19 +54,19 @@ export function createGameController({
   });
 }
 
-export function updateGameController({
+export function updateGameController<TGame extends GameRecord = GameRecord>({
   games,
   form,
   editingGameIndex,
 }: {
-  games: any[];
-  form: any;
+  games: TGame[];
+  form: unknown;
   editingGameIndex: number;
-}) {
-  const result = validateAndNormalizeGameController(form);
+}): ControllerResult<GameMutationControllerData<TGame>> {
+  const result = validateAndNormalizeGameController<TGame>(form);
 
   if (!result.success || !result.data) {
-    return result;
+    return controllerFailure(result.errors || "Game validation failed.");
   }
 
   return controllerSuccess({

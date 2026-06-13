@@ -1,4 +1,6 @@
-export function formatMoney(value: any) {
+type MoneyInput = number | string | null | undefined;
+
+export function formatMoney(value: MoneyInput) {
   return new Intl.NumberFormat("en-US", {
     style: "currency",
     currency: "USD",

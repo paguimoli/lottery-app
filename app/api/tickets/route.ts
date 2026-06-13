@@ -23,8 +23,8 @@ type TicketRequestBody = {
   legs?: TicketLeg[];
 };
 
-function isMissingString(value: unknown) {
-  return typeof value !== "string" || value.trim() === "";
+function isNonEmptyString(value: unknown): value is string {
+  return typeof value === "string" && value.trim() !== "";
 }
 
 function jsonError(message: string, status: number) {
@@ -40,19 +40,19 @@ export async function POST(request: Request) {
     return jsonError("Invalid JSON body.", 400);
   }
 
-  if (isMissingString(body.organizationExternalId)) {
+  if (!isNonEmptyString(body.organizationExternalId)) {
     return jsonError("organizationExternalId is required.", 400);
   }
 
-  if (isMissingString(body.playerExternalId)) {
+  if (!isNonEmptyString(body.playerExternalId)) {
     return jsonError("playerExternalId is required.", 400);
   }
 
-  if (isMissingString(body.drawingExternalId)) {
+  if (!isNonEmptyString(body.drawingExternalId)) {
     return jsonError("drawingExternalId is required.", 400);
   }
 
-  if (isMissingString(body.externalTicketId)) {
+  if (!isNonEmptyString(body.externalTicketId)) {
     return jsonError("externalTicketId is required.", 400);
   }
 
@@ -101,6 +101,7 @@ export async function POST(request: Request) {
     .select("id")
     .eq("external_id", drawingExternalId)
     .maybeSingle();
+  const drawingErrorMessage = drawingError?.message ?? null;
 
   if (drawingError) {
     console.error("Ticket intake drawing lookup failed:", drawingError);
@@ -113,7 +114,7 @@ export async function POST(request: Request) {
         accepted: false,
         error: "Drawing not found.",
         drawingExternalId,
-        supabaseErrorMessage: drawingError?.message || null,
+        supabaseErrorMessage: drawingErrorMessage,
         debugMessage: "Check normalized_drawings.external_id",
       },
       { status: 404 }
