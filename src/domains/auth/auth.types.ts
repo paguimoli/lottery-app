@@ -53,6 +53,47 @@ export type PlatformUser = {
   lastLoginAt?: string | null;
 };
 
+export type AuthUserRecord = {
+  id: string;
+  username: string;
+  email: string;
+  displayName: string;
+  identityClass: IdentityClass;
+  status: UserStatus;
+  passwordHash?: string | null;
+  failedLoginAttempts: number;
+  lockedUntil?: string | null;
+  lastLoginAt?: string | null;
+};
+
+export type LoginRequestInput = {
+  username: string;
+  password: string;
+};
+
+export type LogoutRequestInput = {
+  sessionToken: SessionToken;
+};
+
+export type AuthRequestMetadata = SessionMetadata;
+
+export type LoginSuccessResponse = {
+  success: true;
+  sessionToken: SessionToken;
+  expiresAt: string;
+};
+
+export type LoginFailureResponse = {
+  success: false;
+  error: string;
+};
+
+export type LoginResponse = LoginSuccessResponse | LoginFailureResponse;
+
+export type LogoutResponse = {
+  success: true;
+};
+
 export type {
   Argon2idPasswordHash,
   PasswordPolicyInput,

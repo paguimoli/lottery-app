@@ -4,7 +4,12 @@ import {
   IDENTITY_CLASSES,
   USER_STATUSES,
 } from "./auth.constants";
-import type { IdentityClass, UserStatus } from "./auth.types";
+import type {
+  IdentityClass,
+  LoginRequestInput,
+  LogoutRequestInput,
+  UserStatus,
+} from "./auth.types";
 export { validatePasswordPolicy } from "./password.policy";
 export { validateSessionMetadata } from "./session.helpers";
 
@@ -83,4 +88,61 @@ export function isDefaultPlatformGroupName(groupName: string) {
   return DEFAULT_PLATFORM_GROUP_NAMES.includes(
     groupName.trim() as (typeof DEFAULT_PLATFORM_GROUP_NAMES)[number]
   );
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function isNonEmptyString(value: unknown): value is string {
+  return typeof value === "string" && value.trim() !== "";
+}
+
+export function normalizeLoginInput(
+  input: unknown
+): LoginRequestInput | null {
+  if (!isRecord(input)) {
+    return null;
+  }
+
+  if (!isNonEmptyString(input.username) || !isNonEmptyString(input.password)) {
+    return null;
+  }
+
+  return {
+    username: input.username.trim(),
+    password: input.password,
+  };
+}
+
+export function validateLoginInput(input: unknown) {
+  const normalized = normalizeLoginInput(input);
+
+  if (!normalized) {
+    return invalid("Invalid credentials.");
+  }
+
+  return valid();
+}
+
+export function normalizeLogoutInput(
+  input: unknown
+): LogoutRequestInput | null {
+  if (!isRecord(input) || !isNonEmptyString(input.sessionToken)) {
+    return null;
+  }
+
+  return {
+    sessionToken: input.sessionToken,
+  };
+}
+
+export function validateLogoutInput(input: unknown) {
+  const normalized = normalizeLogoutInput(input);
+
+  if (!normalized) {
+    return invalid("Session token is required.");
+  }
+
+  return valid();
 }
