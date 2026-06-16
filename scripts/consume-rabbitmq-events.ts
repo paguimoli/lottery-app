@@ -19,11 +19,13 @@ async function main() {
     routing,
     handler: async (message) => {
       logger.info({
-        message: "RabbitMQ event received.",
+        message: "RabbitMQ consumed event payload.",
         correlationId: message.correlationId ?? null,
         metadata: {
-          type: message.type,
-          id: message.id ?? null,
+          eventType: message.type,
+          aggregateType: message.aggregateType ?? null,
+          aggregateId: message.aggregateId ?? null,
+          messageId: message.id ?? null,
           payload: message.payload,
         },
       });
