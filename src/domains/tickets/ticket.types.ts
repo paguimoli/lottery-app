@@ -31,6 +31,7 @@ export type Ticket = {
   createdAt: string;
   acceptedAt?: string | null;
   settledAt?: string | null;
+  reservationId?: string | null;
   ledgerTransactionIds: string[];
   notes?: string;
   recordHash?: string | null;

@@ -121,6 +121,7 @@ export function buildTestTicketPayload({
     createdAt,
     acceptedAt: null,
     settledAt: null,
+    reservationId: null,
     ledgerTransactionIds: [],
     notes: form.notes.trim(),
   }, "ticket", ticketId);

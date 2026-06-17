@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 
 import { supabase } from "@/app/lib/supabaseClient";
+import { getOrCreateCorrelationId } from "@/src/lib/observability/correlation";
 
 type TicketLeg = {
   betType?: string;
@@ -31,7 +32,12 @@ function jsonError(message: string, status: number) {
   return NextResponse.json({ accepted: false, error: message }, { status });
 }
 
+function isIntegerMinorUnitAmount(value: unknown): value is number {
+  return typeof value === "number" && Number.isInteger(value);
+}
+
 export async function POST(request: Request) {
+  const correlationId = getOrCreateCorrelationId(request);
   let body: TicketRequestBody;
 
   try {
@@ -58,6 +64,15 @@ export async function POST(request: Request) {
 
   if (!Array.isArray(body.legs) || body.legs.length === 0) {
     return jsonError("legs array is required.", 400);
+  }
+
+  for (const leg of body.legs) {
+    if (!isIntegerMinorUnitAmount(leg.amount) || leg.amount <= 0) {
+      return jsonError(
+        "Every leg amount must be a positive integer minor currency value.",
+        400
+      );
+    }
   }
 
   const organizationExternalId = body.organizationExternalId.trim();
@@ -158,7 +173,12 @@ export async function POST(request: Request) {
     0
   );
   const sourceType = body.sourceType || "api";
-  const currency = body.currency || "USD";
+  const currency = isNonEmptyString(body.currency)
+    ? body.currency.trim().toUpperCase()
+    : "USD";
+  const idempotencyKey =
+    request.headers.get("Idempotency-Key")?.trim() ||
+    `ticket:${organization.id}:${externalTicketId}`;
 
   const { data: rpcPayload, error: rpcError } = await supabase.rpc(
     "place_ticket_with_wallet_debit",
@@ -171,6 +191,8 @@ export async function POST(request: Request) {
       p_currency: currency || "USD",
       p_total_amount: totalAmount,
       p_legs: legs,
+      p_idempotency_key: idempotencyKey,
+      p_correlation_id: correlationId,
     }
   );
 
