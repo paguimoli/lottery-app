@@ -1,4 +1,5 @@
 import type {
+  ApplyCreditSettlementInput,
   ReleaseCreditExposureInput,
   ReserveCreditExposureInput,
 } from "./credit-reservation.types";
@@ -46,6 +47,33 @@ export function validateReleaseCreditExposureInput(
   }
   if (!isIntegerMinorUnitAmount(input.releaseAmount) || input.releaseAmount <= 0) {
     errors.push("Release amount must be a positive integer minor unit value.");
+  }
+
+  return {
+    valid: errors.length === 0,
+    errors,
+  };
+}
+
+export function validateApplyCreditSettlementInput(
+  input: ApplyCreditSettlementInput
+) {
+  const errors: string[] = [];
+
+  if (!input.reservationId) errors.push("Reservation id is required.");
+  if (!input.ticketId.trim()) errors.push("Ticket id is required.");
+  if (!input.settlementId.trim()) errors.push("Settlement id is required.");
+  if (!input.idempotencyKey.trim()) {
+    errors.push("Idempotency key is required.");
+  }
+  if (!isIntegerMinorUnitAmount(input.releaseAmount) || input.releaseAmount <= 0) {
+    errors.push("Release amount must be a positive integer minor unit value.");
+  }
+  if (!isIntegerMinorUnitAmount(input.balanceImpact)) {
+    errors.push("Balance impact must be an integer minor unit value.");
+  }
+  if (!isIso4217Currency(input.currency)) {
+    errors.push("Currency must be an ISO-4217 code.");
   }
 
   return {

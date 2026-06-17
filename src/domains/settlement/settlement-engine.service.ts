@@ -35,6 +35,15 @@ export {
   type SettlementLedgerPostingResult,
 } from "./settlement-ledger.service";
 
+export {
+  applyCreditSettlementForRecord,
+  applyCreditSettlementForRecords,
+  type ApplyCreditSettlementForRecordInput,
+  type ApplyCreditSettlementForRecordsInput,
+  type SettlementCreditApplicationResult,
+  type SettlementCreditApplicationStatus,
+} from "./settlement-credit.service";
+
 export { executeResettlementController } from "./resettlement.controller";
 
 export {

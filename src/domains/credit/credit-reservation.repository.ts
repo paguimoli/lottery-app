@@ -1,7 +1,9 @@
 import { supabaseServerAdmin } from "@/src/lib/supabase/server-admin-client";
 import type {
+  ApplyCreditSettlementInput,
   CreditReservation,
   CreditReservationStatus,
+  CreditSettlementApplicationResult,
   CreditSummary,
   ReleaseCreditExposureInput,
   ReserveCreditExposureInput,
@@ -26,6 +28,27 @@ type CreditReservationRow = {
   settled_at?: string | null;
   cancelled_at?: string | null;
   metadata?: Record<string, unknown> | null;
+};
+
+type CreditSettlementApplicationRow = {
+  applicationId?: unknown;
+  reservationId?: unknown;
+  playerId?: unknown;
+  ticketId?: unknown;
+  settlementId?: unknown;
+  releaseAmount?: unknown;
+  balanceImpact?: unknown;
+  balanceBefore?: unknown;
+  balanceAfter?: unknown;
+  currency?: unknown;
+  operationType?: unknown;
+  status?: unknown;
+  releasedAmount?: unknown;
+  settledAmount?: unknown;
+  remainingExposure?: unknown;
+  idempotencyKey?: unknown;
+  correlationId?: unknown;
+  createdAt?: unknown;
 };
 
 const CREDIT_RESERVATION_SELECT =
@@ -79,6 +102,39 @@ function assertCreditReservation(
   return reservation;
 }
 
+function assertCreditSettlementApplication(
+  row: CreditSettlementApplicationRow | null
+): CreditSettlementApplicationResult {
+  if (!row || typeof row !== "object") {
+    throw new CreditReservationRepositoryError();
+  }
+
+  return {
+    applicationId: String(row.applicationId ?? ""),
+    reservationId: String(row.reservationId ?? ""),
+    playerId: String(row.playerId ?? ""),
+    ticketId: String(row.ticketId ?? ""),
+    settlementId: String(row.settlementId ?? ""),
+    releaseAmount: Number(row.releaseAmount ?? 0),
+    balanceImpact: Number(row.balanceImpact ?? 0),
+    balanceBefore: Number(row.balanceBefore ?? 0),
+    balanceAfter: Number(row.balanceAfter ?? 0),
+    currency: String(row.currency ?? ""),
+    operationType:
+      row.operationType === "FULL_SETTLEMENT"
+        ? "FULL_SETTLEMENT"
+        : "PARTIAL_SETTLEMENT",
+    status: String(row.status ?? "FAILED") as CreditReservationStatus,
+    releasedAmount: Number(row.releasedAmount ?? 0),
+    settledAmount: Number(row.settledAmount ?? 0),
+    remainingExposure: Number(row.remainingExposure ?? 0),
+    idempotencyKey: String(row.idempotencyKey ?? ""),
+    correlationId:
+      typeof row.correlationId === "string" ? row.correlationId : null,
+    createdAt: String(row.createdAt ?? ""),
+  };
+}
+
 export async function reserveCreditExposure(
   input: ReserveCreditExposureInput
 ): Promise<CreditReservation> {
@@ -123,6 +179,33 @@ export async function releaseCreditExposure(
   }
 
   return assertCreditReservation(data as CreditReservationRow | null);
+}
+
+export async function applyCreditSettlement(
+  input: ApplyCreditSettlementInput
+): Promise<CreditSettlementApplicationResult> {
+  const { data, error } = await supabaseServerAdmin.rpc(
+    "apply_credit_settlement",
+    {
+      p_reservation_id: input.reservationId,
+      p_ticket_id: input.ticketId,
+      p_settlement_id: input.settlementId,
+      p_release_amount: input.releaseAmount,
+      p_balance_impact: input.balanceImpact,
+      p_currency: input.currency,
+      p_idempotency_key: input.idempotencyKey,
+      p_correlation_id: input.correlationId ?? null,
+      p_metadata: input.metadata ?? {},
+    }
+  );
+
+  if (error) {
+    throw new CreditReservationRepositoryError(error.message);
+  }
+
+  return assertCreditSettlementApplication(
+    data as CreditSettlementApplicationRow | null
+  );
 }
 
 export async function getPlayerCreditSummary(

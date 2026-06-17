@@ -22,6 +22,10 @@ import {
 } from "./settlement.repository";
 import { executeSettlementRun } from "./settlement-engine.service";
 import { canResumeSettlementRun, resumeSettlementRun } from "./settlement-recovery.service";
+import {
+  applyCreditSettlementForRecords,
+  type SettlementCreditApplicationResult,
+} from "./settlement-credit.service";
 import { createLedgerTransactionsForSettlementRecords } from "./settlement-ledger.service";
 import {
   applySettlementRunStatusTransition,
@@ -39,6 +43,7 @@ import {
   validateSettlementRunCreation,
   validateSettlementStatusTransition,
 } from "./settlement.validation";
+import { logger } from "@/src/lib/observability/logger";
 
 function mergeSettlementRecordsForRun({
   records,
@@ -60,6 +65,119 @@ function getSettlementStatusAuditAction(status: SettlementRunStatus) {
   if (status === "failed") return AUDIT_ACTIONS.SETTLEMENT_RUN_FAILED;
 
   return "";
+}
+
+function hasCreditBackedSettlements({
+  settlementRecords,
+  tickets,
+}: {
+  settlementRecords: SettlementRecord[];
+  tickets: Ticket[];
+}) {
+  const ticketsById = new Map(tickets.map((ticket) => [ticket.id, ticket]));
+
+  return settlementRecords.some((record) => {
+    const ticket = ticketsById.get(record.ticketId);
+
+    return Boolean(ticket?.reservationId);
+  });
+}
+
+async function applyCreditSettlementsForRun({
+  settlementRecords,
+  tickets,
+  settlementRunId,
+  currency,
+  correlationId,
+}: {
+  settlementRecords: SettlementRecord[];
+  tickets: Ticket[];
+  settlementRunId: string;
+  currency?: string | null;
+  correlationId?: string | null;
+}) {
+  const hasCreditSettlements = hasCreditBackedSettlements({
+    settlementRecords,
+    tickets,
+  });
+
+  if (!hasCreditSettlements) {
+    return {
+      creditSettlementResults: [] as SettlementCreditApplicationResult[],
+      creditSettlementFailures: [] as SettlementCreditApplicationResult[],
+    };
+  }
+
+  const creditSettlementResults = currency
+    ? await applyCreditSettlementForRecords({
+        settlementRecords,
+        tickets,
+        currency,
+        correlationId,
+      })
+    : settlementRecords
+        .filter((record) => {
+          const ticket = tickets.find(
+            (updatedTicket) => updatedTicket.id === record.ticketId
+          );
+
+          return Boolean(ticket?.reservationId);
+        })
+        .map((record): SettlementCreditApplicationResult => {
+          const ticket = tickets.find(
+            (updatedTicket) => updatedTicket.id === record.ticketId
+          );
+
+          return {
+            settlementRecordId: record.id,
+            ticketId: record.ticketId,
+            reservationId: ticket?.reservationId ?? null,
+            status: "failed",
+            reason: "Currency is required to apply credit settlement release.",
+          };
+        });
+
+  const creditSettlementFailures = creditSettlementResults.filter(
+    (result) => result.status === "failed"
+  );
+
+  for (const failure of creditSettlementFailures) {
+    logger.error({
+      message: "Credit settlement application failed during settlement execution.",
+      correlationId,
+      metadata: {
+        ticketId: failure.ticketId,
+        reservationId: failure.reservationId ?? null,
+        settlementRecordId: failure.settlementRecordId,
+        settlementRunId,
+        error: failure.reason ?? "Credit settlement application failed.",
+      },
+    });
+  }
+
+  return {
+    creditSettlementResults,
+    creditSettlementFailures,
+  };
+}
+
+function formatCreditSettlementErrors({
+  creditSettlementFailures,
+  correlationId,
+}: {
+  creditSettlementFailures: SettlementCreditApplicationResult[];
+  correlationId?: string | null;
+}) {
+  return creditSettlementFailures.map((failure) =>
+    [
+      "Credit settlement application failed.",
+      `ticketId=${failure.ticketId}`,
+      `reservationId=${failure.reservationId ?? ""}`,
+      `settlementRecordId=${failure.settlementRecordId}`,
+      `correlationId=${correlationId ?? ""}`,
+      `error=${failure.reason ?? "Unknown error"}`,
+    ].join(" ")
+  );
 }
 
 export function createSettlementRunController({
@@ -214,7 +332,7 @@ export function reverseSettlementRunController({
   });
 }
 
-export function executeSettlementRunController({
+export async function executeSettlementRunController({
   settlementRunId,
   runs,
   records,
@@ -228,6 +346,8 @@ export function executeSettlementRunController({
   drawMetrics,
   officialResultPostedAt,
   ledgerTransactions = [],
+  currency = null,
+  correlationId = null,
 }: {
   settlementRunId: string;
   runs: SettlementRun[];
@@ -242,6 +362,8 @@ export function executeSettlementRunController({
   drawMetrics?: KenoDrawMetrics | null;
   officialResultPostedAt?: string | null;
   ledgerTransactions?: LedgerTransaction[];
+  currency?: string | null;
+  correlationId?: string | null;
 }) {
   const run = findSettlementRunById(runs, settlementRunId);
 
@@ -273,9 +395,19 @@ export function executeSettlementRunController({
     ticketLines: execution.updatedTicketLines,
     existingLedgerTransactions: ledgerTransactions,
   });
+  const { creditSettlementResults, creditSettlementFailures } =
+    await applyCreditSettlementsForRun({
+      settlementRecords: ledgerPosting.settlementRecords,
+      tickets: execution.updatedTickets,
+      settlementRunId: run.id,
+      currency,
+      correlationId,
+    });
+  const hasCreditSettlementFailures = creditSettlementFailures.length > 0;
+
   const completedRun: SettlementRun = attachIntegrityHash({
     ...run,
-    status: execution.summary.status,
+    status: hasCreditSettlementFailures ? "failed" : execution.summary.status,
     expectedTicketCount: execution.summary.expectedTicketCount,
     expectedLineCount: execution.summary.expectedLineCount,
     startedAt: execution.summary.startedAt,
@@ -301,6 +433,14 @@ export function executeSettlementRunController({
     execution: {
       ...execution,
       settlementRecords: ledgerPosting.settlementRecords,
+      creditSettlementResults,
+      errors: [
+        ...execution.errors,
+        ...formatCreditSettlementErrors({
+          creditSettlementFailures,
+          correlationId,
+        }),
+      ],
     },
     auditEvents: [
       createAuditEvent({
@@ -318,6 +458,7 @@ export function executeSettlementRunController({
           executionId: execution.summary.executionId,
           processedLineCount: execution.summary.processedLineCount,
           failedCount: execution.summary.failedCount,
+          creditSettlementFailureCount: creditSettlementFailures.length,
         },
       }),
       ...ledgerPosting.ledgerTransactions.map((transaction) =>
@@ -348,7 +489,7 @@ export function executeSettlementRunController({
   });
 }
 
-export function resumeSettlementRunController({
+export async function resumeSettlementRunController({
   settlementRunId,
   runs,
   records,
@@ -362,6 +503,8 @@ export function resumeSettlementRunController({
   drawMetrics,
   officialResultPostedAt,
   ledgerTransactions = [],
+  currency = null,
+  correlationId = null,
 }: {
   settlementRunId: string;
   runs: SettlementRun[];
@@ -376,6 +519,8 @@ export function resumeSettlementRunController({
   drawMetrics?: KenoDrawMetrics | null;
   officialResultPostedAt?: string | null;
   ledgerTransactions?: LedgerTransaction[];
+  currency?: string | null;
+  correlationId?: string | null;
 }) {
   const run = findSettlementRunById(runs, settlementRunId);
 
@@ -411,9 +556,19 @@ export function resumeSettlementRunController({
     ticketLines: execution.updatedTicketLines,
     existingLedgerTransactions: ledgerTransactions,
   });
+  const { creditSettlementResults, creditSettlementFailures } =
+    await applyCreditSettlementsForRun({
+      settlementRecords: ledgerPosting.settlementRecords,
+      tickets: execution.updatedTickets,
+      settlementRunId: run.id,
+      currency,
+      correlationId,
+    });
+  const hasCreditSettlementFailures = creditSettlementFailures.length > 0;
+
   const nextRun: SettlementRun = attachIntegrityHash({
     ...run,
-    status: execution.summary.status,
+    status: hasCreditSettlementFailures ? "failed" : execution.summary.status,
     expectedTicketCount: execution.summary.expectedTicketCount,
     expectedLineCount: execution.summary.expectedLineCount,
     startedAt: execution.summary.startedAt,
@@ -439,6 +594,14 @@ export function resumeSettlementRunController({
     execution: {
       ...execution,
       settlementRecords: ledgerPosting.settlementRecords,
+      creditSettlementResults,
+      errors: [
+        ...execution.errors,
+        ...formatCreditSettlementErrors({
+          creditSettlementFailures,
+          correlationId,
+        }),
+      ],
     },
     auditEvents: [
       createAuditEvent({
@@ -456,6 +619,7 @@ export function resumeSettlementRunController({
           executionId: execution.summary.executionId,
           processedLineCount: execution.summary.processedLineCount,
           failedCount: execution.summary.failedCount,
+          creditSettlementFailureCount: creditSettlementFailures.length,
         },
       }),
       ...ledgerPosting.ledgerTransactions.map((transaction) =>

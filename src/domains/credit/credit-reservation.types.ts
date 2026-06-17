@@ -56,3 +56,36 @@ export type ReleaseCreditExposureInput = {
   reason?: string | null;
   metadata?: Record<string, unknown>;
 };
+
+export type ApplyCreditSettlementInput = {
+  reservationId: string;
+  ticketId: string;
+  settlementId: string;
+  releaseAmount: number;
+  balanceImpact: number;
+  currency: string;
+  idempotencyKey: string;
+  correlationId?: string | null;
+  metadata?: Record<string, unknown>;
+};
+
+export type CreditSettlementApplicationResult = {
+  applicationId: string;
+  reservationId: string;
+  playerId: string;
+  ticketId: string;
+  settlementId: string;
+  releaseAmount: number;
+  balanceImpact: number;
+  balanceBefore: number;
+  balanceAfter: number;
+  currency: string;
+  operationType: "PARTIAL_SETTLEMENT" | "FULL_SETTLEMENT";
+  status: CreditReservationStatus;
+  releasedAmount: number;
+  settledAmount: number;
+  remainingExposure: number;
+  idempotencyKey: string;
+  correlationId?: string | null;
+  createdAt: string;
+};
