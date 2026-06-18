@@ -1,7 +1,5 @@
-import type { LedgerTransaction } from "../ledger/ledger.types";
 import { attachIntegrityHash } from "../integrity/integrity.helpers";
 import { executeSettlementRun } from "./settlement-executor.service";
-import { createLedgerTransactionsForSettlementRecords } from "./settlement-ledger.service";
 import type { SettlementRecord } from "./settlement.types";
 import type {
   ResettlementExecutionInput,
@@ -98,88 +96,6 @@ export function createSettlementReversalRecords({
     });
 }
 
-export function createLedgerReversalsForSettlementRecords({
-  originalSettlementRecords,
-  reversalSettlementRecords = [],
-  ledgerTransactions,
-}: {
-  originalSettlementRecords: SettlementRecord[];
-  reversalSettlementRecords?: SettlementRecord[];
-  ledgerTransactions: LedgerTransaction[];
-}) {
-  const reversals: LedgerTransaction[] = [];
-
-  for (const settlementRecord of originalSettlementRecords) {
-    const reversalSettlementRecord = reversalSettlementRecords.find(
-      (record) => record.reversalOfSettlementRecordId === settlementRecord.id
-    );
-    const linkedTransactions = ledgerTransactions.filter((transaction) =>
-      settlementRecord.ledgerTransactionIds.includes(transaction.id)
-    );
-
-    for (const transaction of linkedTransactions) {
-      const existingReversal = [
-        ...ledgerTransactions,
-        ...reversals,
-      ].find(
-        (createdTransaction) =>
-          createdTransaction.transactionType === "settlement_reversal" &&
-          createdTransaction.parentTransactionId === transaction.id
-      );
-
-      if (existingReversal) {
-        continue;
-      }
-
-      const id = `LEDGER-SETTLEMENT-REVERSAL-${transaction.id}`;
-
-      reversals.push(
-        attachIntegrityHash(
-          {
-            id,
-            accountId: transaction.accountId,
-            category: transaction.category,
-            transactionType: "settlement_reversal",
-            amount: -Number(transaction.amount || 0),
-            description: `Reversal of settlement transaction ${transaction.id}`,
-            referenceId: reversalSettlementRecord?.id || settlementRecord.id,
-            parentTransactionId: transaction.id,
-            createdBy: "resettlement",
-            createdAt: new Date().toISOString(),
-          },
-          "ledger_transaction",
-          id,
-          transaction.recordHash || null
-        )
-      );
-    }
-  }
-
-  return reversals;
-}
-
-function attachLedgerIdsToSettlementRecords({
-  settlementRecords,
-  ledgerTransactions,
-}: {
-  settlementRecords: SettlementRecord[];
-  ledgerTransactions: LedgerTransaction[];
-}) {
-  return settlementRecords.map((record) =>
-    attachIntegrityHash(
-      {
-        ...record,
-        ledgerTransactionIds: ledgerTransactions
-          .filter((transaction) => transaction.referenceId === record.id)
-          .map((transaction) => transaction.id),
-      },
-      "settlement_record",
-      record.id,
-      record.previousHash || null
-    )
-  );
-}
-
 export function createCorrectedSettlementRecords({
   correctedSettlementRecords,
   previousSettlementRecords,
@@ -213,7 +129,6 @@ export function executeResettlement({
   overrideApproval,
   requestedByAdminId,
   originalSettlementRecords,
-  existingLedgerTransactions,
   correctedSettlementExecutionInput,
 }: ResettlementExecutionInput): ResettlementExecutionResult {
   const eligibility = validateResettlementEligibility({
@@ -239,39 +154,21 @@ export function executeResettlement({
     resettlementRunId: correctedSettlementExecutionInput.settlementRun.id,
     existingSettlementRecords: correctedSettlementExecutionInput.existingSettlementRecords,
   });
-  const reversalLedgerTransactions = createLedgerReversalsForSettlementRecords({
-    originalSettlementRecords,
-    reversalSettlementRecords,
-    ledgerTransactions: existingLedgerTransactions,
-  });
-  const linkedReversalSettlementRecords = attachLedgerIdsToSettlementRecords({
-    settlementRecords: reversalSettlementRecords,
-    ledgerTransactions: reversalLedgerTransactions,
-  });
   const correctedExecution = executeSettlementRun(correctedSettlementExecutionInput);
   const correctedSettlementRecords = createCorrectedSettlementRecords({
     correctedSettlementRecords: correctedExecution.settlementRecords,
     previousSettlementRecords: [
       ...originalSettlementRecords,
-      ...linkedReversalSettlementRecords,
-    ],
-  });
-  const correctedLedgerPosting = createLedgerTransactionsForSettlementRecords({
-    settlementRecords: correctedSettlementRecords,
-    tickets: correctedExecution.updatedTickets,
-    ticketLines: correctedExecution.updatedTicketLines,
-    existingLedgerTransactions: [
-      ...existingLedgerTransactions,
-      ...reversalLedgerTransactions,
+      ...reversalSettlementRecords,
     ],
   });
 
   return {
     success: true,
     errors: correctedExecution.errors,
-    reversalSettlementRecords: linkedReversalSettlementRecords,
-    reversalLedgerTransactions,
-    correctedSettlementRecords: correctedLedgerPosting.settlementRecords,
-    correctedLedgerTransactions: correctedLedgerPosting.ledgerTransactions,
+    reversalSettlementRecords,
+    reversalLedgerTransactions: [],
+    correctedSettlementRecords,
+    correctedLedgerTransactions: [],
   };
 }

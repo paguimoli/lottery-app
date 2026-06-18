@@ -59,28 +59,6 @@ export function executeResettlementController(input: ResettlementExecutionInput)
             result.correctedLedgerTransactions.length,
         },
       }),
-      ...result.reversalLedgerTransactions.map((transaction) =>
-        createAuditEvent({
-          entityType: "ledger_transaction",
-          entityId: transaction.id,
-          action: AUDIT_ACTIONS.LEDGER_REVERSAL_CREATED,
-          actorType: "admin",
-          actorId: input.requestedByAdminId,
-          approvalId: input.overrideApproval?.id || null,
-          newValue: transaction,
-        })
-      ),
-      ...result.correctedLedgerTransactions.map((transaction) =>
-        createAuditEvent({
-          entityType: "ledger_transaction",
-          entityId: transaction.id,
-          action: AUDIT_ACTIONS.LEDGER_TRANSACTION_CREATED,
-          actorType: "admin",
-          actorId: input.requestedByAdminId,
-          approvalId: input.overrideApproval?.id || null,
-          newValue: transaction,
-        })
-      ),
     ],
   });
 }

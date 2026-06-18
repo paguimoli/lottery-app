@@ -30,10 +30,10 @@ export {
 } from "./settlement-recovery.service";
 
 export {
-  createLedgerTransactionsForSettlementRecord,
-  createLedgerTransactionsForSettlementRecords,
-  type SettlementLedgerPostingResult,
-} from "./settlement-ledger.service";
+  applySettlementLedgerEffects,
+  type SettlementLedgerEffectCommand,
+  type SettlementLedgerEffectResult,
+} from "./settlement-financial-effects.service";
 
 export {
   applyCreditSettlementForRecord,
@@ -48,7 +48,6 @@ export { executeResettlementController } from "./resettlement.controller";
 
 export {
   createCorrectedSettlementRecords,
-  createLedgerReversalsForSettlementRecords,
   createSettlementReversalRecords,
   executeResettlement,
 } from "./resettlement.service";

@@ -1,4 +1,3 @@
-import type { LedgerTransaction } from "../ledger/ledger.types";
 import type { SettlementExecutionInput } from "./settlement-executor.service";
 import type { SettlementRecord, SettlementRun } from "./settlement.types";
 
@@ -47,7 +46,7 @@ export type ResettlementExecutionInput = {
   overrideApproval?: OverrideApproval | null;
   requestedByAdminId: string;
   originalSettlementRecords: SettlementRecord[];
-  existingLedgerTransactions: LedgerTransaction[];
+  existingLedgerTransactions: unknown[];
   correctedSettlementExecutionInput: SettlementExecutionInput;
 };
 
@@ -55,7 +54,7 @@ export type ResettlementExecutionResult = {
   success: boolean;
   errors: string[];
   reversalSettlementRecords: SettlementRecord[];
-  reversalLedgerTransactions: LedgerTransaction[];
+  reversalLedgerTransactions: never[];
   correctedSettlementRecords: SettlementRecord[];
-  correctedLedgerTransactions: LedgerTransaction[];
+  correctedLedgerTransactions: never[];
 };

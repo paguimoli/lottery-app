@@ -16,3 +16,8 @@ export {
 export async function getLedgerAuditTrail(ledgerEntryId: string) {
   return getAuditTrailByLedgerTransactionId(ledgerEntryId);
 }
+
+export type {
+  CreateLedgerEntryInput,
+  LedgerEntry,
+} from "./ledger.types";

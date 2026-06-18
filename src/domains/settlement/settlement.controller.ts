@@ -5,8 +5,6 @@ import {
 import { createAuditEvent } from "../audit/audit.service";
 import { AUDIT_ACTIONS } from "../audit/audit.types";
 import { attachIntegrityHash } from "../integrity/integrity.helpers";
-import { saveLedgerTransactions } from "../ledger/ledger.helpers";
-import type { LedgerTransaction } from "../ledger/ledger.types";
 import type { Ticket, TicketLine } from "../tickets/ticket.types";
 import type {
   KenoDrawMetrics,
@@ -26,7 +24,7 @@ import {
   applyCreditSettlementForRecords,
   type SettlementCreditApplicationResult,
 } from "./settlement-credit.service";
-import { createLedgerTransactionsForSettlementRecords } from "./settlement-ledger.service";
+import { applySettlementLedgerEffects } from "./settlement-financial-effects.service";
 import {
   applySettlementRunStatusTransition,
   buildPlaceholderSettlementRecords,
@@ -361,7 +359,7 @@ export async function executeSettlementRunController({
   bullseyeNumber?: number | null;
   drawMetrics?: KenoDrawMetrics | null;
   officialResultPostedAt?: string | null;
-  ledgerTransactions?: LedgerTransaction[];
+  ledgerTransactions?: unknown[];
   currency?: string | null;
   correlationId?: string | null;
 }) {
@@ -389,15 +387,12 @@ export async function executeSettlementRunController({
   const runRecords = records.filter(
     (record) => record.settlementRunId === run.id
   );
-  const ledgerPosting = createLedgerTransactionsForSettlementRecords({
+  const ledgerEffects = await applySettlementLedgerEffects({
     settlementRecords: [...runRecords, ...execution.settlementRecords],
-    tickets: execution.updatedTickets,
-    ticketLines: execution.updatedTicketLines,
-    existingLedgerTransactions: ledgerTransactions,
   });
   const { creditSettlementResults, creditSettlementFailures } =
     await applyCreditSettlementsForRun({
-      settlementRecords: ledgerPosting.settlementRecords,
+      settlementRecords: ledgerEffects.settlementRecords,
       tickets: execution.updatedTickets,
       settlementRunId: run.id,
       currency,
@@ -432,7 +427,7 @@ export async function executeSettlementRunController({
   return controllerSuccess({
     execution: {
       ...execution,
-      settlementRecords: ledgerPosting.settlementRecords,
+      settlementRecords: ledgerEffects.settlementRecords,
       creditSettlementResults,
       errors: [
         ...execution.errors,
@@ -461,14 +456,14 @@ export async function executeSettlementRunController({
           creditSettlementFailureCount: creditSettlementFailures.length,
         },
       }),
-      ...ledgerPosting.ledgerTransactions.map((transaction) =>
+      ...ledgerEffects.ledgerEntries.map((entry) =>
         createAuditEvent({
-          entityType: "ledger_transaction",
-          entityId: transaction.id,
+          entityType: "financial_ledger_entry",
+          entityId: entry.id,
           action: AUDIT_ACTIONS.LEDGER_TRANSACTION_CREATED,
           actorType: "system",
           actorId: "settlement-engine",
-          newValue: transaction,
+          newValue: entry,
           metadata: { settlementRunId: completedRun.id },
         })
       ),
@@ -477,15 +472,13 @@ export async function executeSettlementRunController({
     records: mergeSettlementRecordsForRun({
       records,
       settlementRunId: run.id,
-      runRecords: ledgerPosting.settlementRecords,
+      runRecords: ledgerEffects.settlementRecords,
     }),
     tickets: execution.updatedTickets,
     ticketLines: execution.updatedTicketLines,
-    ledgerTransactions: saveLedgerTransactions(
-      ledgerTransactions,
-      ledgerPosting.ledgerTransactions
-    ),
-    newLedgerTransactions: ledgerPosting.ledgerTransactions,
+    ledgerTransactions,
+    newLedgerTransactions: ledgerEffects.legacyLedgerTransactions,
+    ledgerEntries: ledgerEffects.ledgerEntries,
   });
 }
 
@@ -518,7 +511,7 @@ export async function resumeSettlementRunController({
   bullseyeNumber?: number | null;
   drawMetrics?: KenoDrawMetrics | null;
   officialResultPostedAt?: string | null;
-  ledgerTransactions?: LedgerTransaction[];
+  ledgerTransactions?: unknown[];
   currency?: string | null;
   correlationId?: string | null;
 }) {
@@ -550,15 +543,12 @@ export async function resumeSettlementRunController({
   const runRecords = records.filter(
     (record) => record.settlementRunId === run.id
   );
-  const ledgerPosting = createLedgerTransactionsForSettlementRecords({
+  const ledgerEffects = await applySettlementLedgerEffects({
     settlementRecords: [...runRecords, ...execution.settlementRecords],
-    tickets: execution.updatedTickets,
-    ticketLines: execution.updatedTicketLines,
-    existingLedgerTransactions: ledgerTransactions,
   });
   const { creditSettlementResults, creditSettlementFailures } =
     await applyCreditSettlementsForRun({
-      settlementRecords: ledgerPosting.settlementRecords,
+      settlementRecords: ledgerEffects.settlementRecords,
       tickets: execution.updatedTickets,
       settlementRunId: run.id,
       currency,
@@ -593,7 +583,7 @@ export async function resumeSettlementRunController({
   return controllerSuccess({
     execution: {
       ...execution,
-      settlementRecords: ledgerPosting.settlementRecords,
+      settlementRecords: ledgerEffects.settlementRecords,
       creditSettlementResults,
       errors: [
         ...execution.errors,
@@ -622,14 +612,14 @@ export async function resumeSettlementRunController({
           creditSettlementFailureCount: creditSettlementFailures.length,
         },
       }),
-      ...ledgerPosting.ledgerTransactions.map((transaction) =>
+      ...ledgerEffects.ledgerEntries.map((entry) =>
         createAuditEvent({
-          entityType: "ledger_transaction",
-          entityId: transaction.id,
+          entityType: "financial_ledger_entry",
+          entityId: entry.id,
           action: AUDIT_ACTIONS.LEDGER_TRANSACTION_CREATED,
           actorType: "worker",
           actorId: "settlement-recovery",
-          newValue: transaction,
+          newValue: entry,
           metadata: { settlementRunId: nextRun.id },
         })
       ),
@@ -638,14 +628,12 @@ export async function resumeSettlementRunController({
     records: mergeSettlementRecordsForRun({
       records,
       settlementRunId: run.id,
-      runRecords: ledgerPosting.settlementRecords,
+      runRecords: ledgerEffects.settlementRecords,
     }),
     tickets: execution.updatedTickets,
     ticketLines: execution.updatedTicketLines,
-    ledgerTransactions: saveLedgerTransactions(
-      ledgerTransactions,
-      ledgerPosting.ledgerTransactions
-    ),
-    newLedgerTransactions: ledgerPosting.ledgerTransactions,
+    ledgerTransactions,
+    newLedgerTransactions: ledgerEffects.legacyLedgerTransactions,
+    ledgerEntries: ledgerEffects.ledgerEntries,
   });
 }
