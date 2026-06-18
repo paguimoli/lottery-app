@@ -26,7 +26,9 @@ export class RabbitMqQueuePublisher implements QueuePublisher {
       deadLetterExchange: "",
       deadLetterRoutingKey: routing.deadLetterQueue,
     });
-    await channel.bindQueue(routing.queue, routing.exchange, routing.routingKey);
+    for (const bindingKey of routing.bindingKeys) {
+      await channel.bindQueue(routing.queue, routing.exchange, bindingKey);
+    }
 
     const published = channel.publish(
       routing.exchange,
@@ -41,6 +43,7 @@ export class RabbitMqQueuePublisher implements QueuePublisher {
           aggregateType: message.aggregateType ?? undefined,
           aggregateId: message.aggregateId ?? undefined,
           eventType: message.type,
+          workloadCategory: routing.workloadCategory,
         },
         messageId: message.id,
         correlationId: message.correlationId ?? undefined,

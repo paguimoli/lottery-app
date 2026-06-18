@@ -56,7 +56,9 @@ export class RabbitMqQueueConsumer {
       deadLetterExchange: "",
       deadLetterRoutingKey: routing.deadLetterQueue,
     });
-    await channel.bindQueue(routing.queue, routing.exchange, routing.routingKey);
+    for (const bindingKey of routing.bindingKeys) {
+      await channel.bindQueue(routing.queue, routing.exchange, bindingKey);
+    }
     await channel.prefetch(1);
 
     await channel.consume(

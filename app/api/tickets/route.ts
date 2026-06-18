@@ -1,7 +1,10 @@
 import { NextResponse } from "next/server";
 
 import { supabase } from "@/app/lib/supabaseClient";
+import { createOutboxEvent } from "@/src/domains/outbox/outbox.service";
 import { getOrCreateCorrelationId } from "@/src/lib/observability/correlation";
+import { logger } from "@/src/lib/observability/logger";
+import { supabaseServerAdmin } from "@/src/lib/supabase/server-admin-client";
 
 type TicketLeg = {
   betType?: string;
@@ -34,6 +37,60 @@ function jsonError(message: string, status: number) {
 
 function isIntegerMinorUnitAmount(value: unknown): value is number {
   return typeof value === "number" && Number.isInteger(value);
+}
+
+function getString(value: unknown) {
+  return typeof value === "string" && value.trim() ? value.trim() : null;
+}
+
+async function ensureTicketAcceptedOutboxEvent({
+  ticketId,
+  reservationId,
+  playerId,
+  stake,
+  currency,
+  correlationId,
+}: {
+  ticketId: string;
+  reservationId: string | null;
+  playerId: string;
+  stake: number;
+  currency: string;
+  correlationId: string;
+}) {
+  const { data, error } = await supabaseServerAdmin
+    .from("outbox_events")
+    .select("id")
+    .eq("event_type", "ticket.accepted")
+    .eq("aggregate_type", "ticket")
+    .eq("aggregate_id", ticketId)
+    .limit(1)
+    .maybeSingle();
+
+  if (error) {
+    throw new Error(error.message);
+  }
+
+  if (data) {
+    return;
+  }
+
+  await createOutboxEvent({
+    eventType: "ticket.accepted",
+    aggregateType: "ticket",
+    aggregateId: ticketId,
+    correlationId,
+    payload: {
+      ticketId,
+      reservationId,
+      playerId,
+      stake,
+      amount: stake,
+      currency,
+      correlationId,
+      createdAt: new Date().toISOString(),
+    },
+  });
 }
 
 export async function POST(request: Request) {
@@ -203,6 +260,32 @@ export async function POST(request: Request) {
 
   if (rpcPayload?.accepted === false) {
     return NextResponse.json(rpcPayload, { status: 400 });
+  }
+
+  const ticketId = getString(rpcPayload?.ticketId);
+
+  if (ticketId && !rpcPayload?.duplicate) {
+    try {
+      await ensureTicketAcceptedOutboxEvent({
+        ticketId,
+        reservationId: getString(rpcPayload?.creditReservationId),
+        playerId: player.id,
+        stake: totalAmount,
+        currency,
+        correlationId,
+      });
+    } catch (error) {
+      logger.error({
+        message: "Ticket accepted without outbox event.",
+        correlationId,
+        metadata: {
+          ticketId,
+          error: error instanceof Error ? error.message : "Unknown outbox error.",
+        },
+      });
+
+      return jsonError("Ticket accepted outbox event failed.", 500);
+    }
   }
 
   return NextResponse.json(rpcPayload);

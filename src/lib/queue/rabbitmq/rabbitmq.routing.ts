@@ -1,30 +1,42 @@
-import { getRabbitMqQueueConfig } from "./rabbitmq.config";
+import {
+  getQueueTopologyEntry,
+  resolveQueueTopologyForEvent,
+  type QueueWorkloadCategory,
+} from "../queue-topology";
 
 export type RabbitMqRouting = {
   exchange: string;
   routingKey: string;
+  bindingKeys: string[];
   queue: string;
   deadLetterQueue: string;
-};
-
-const ROUTING_BY_EVENT_TYPE: Record<string, Omit<RabbitMqRouting, "exchange">> = {
-  "cashier.transaction.completed": {
-    routingKey: "cashier.transaction.completed",
-    queue: "cashier.transaction.completed.queue",
-    deadLetterQueue: "cashier.transaction.completed.dlq",
-  },
+  workloadCategory: QueueWorkloadCategory;
 };
 
 export function resolveRabbitMqRouting(eventType: string): RabbitMqRouting {
-  const config = getRabbitMqQueueConfig();
-  const routing = ROUTING_BY_EVENT_TYPE[eventType] ?? {
-    routingKey: eventType,
-    queue: `${eventType}.queue`,
-    deadLetterQueue: `${eventType}.dlq`,
-  };
+  const topology = resolveQueueTopologyForEvent(eventType);
 
   return {
-    exchange: config.exchangeName,
-    ...routing,
+    exchange: topology.exchange,
+    routingKey: topology.routingKey,
+    bindingKeys: [topology.routingKeyPattern],
+    queue: topology.queueName,
+    deadLetterQueue: topology.deadLetterQueueName,
+    workloadCategory: topology.category,
+  };
+}
+
+export function resolveRabbitMqWorkloadRouting(
+  workloadCategory: QueueWorkloadCategory
+): RabbitMqRouting {
+  const topology = getQueueTopologyEntry(workloadCategory);
+
+  return {
+    exchange: topology.exchange,
+    routingKey: topology.routingKeyPattern,
+    bindingKeys: [topology.routingKeyPattern],
+    queue: topology.queueName,
+    deadLetterQueue: topology.deadLetterQueueName,
+    workloadCategory: topology.category,
   };
 }

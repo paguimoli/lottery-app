@@ -2,6 +2,7 @@ import { createCorrelationId } from "@/src/lib/observability/correlation";
 import { logger } from "@/src/lib/observability/logger";
 import { createQueuePublisher } from "@/src/lib/queue/queue.publisher-factory";
 import type { QueuePublisher } from "@/src/lib/queue/queue.types";
+import { resolveQueueTopologyForEvent } from "@/src/lib/queue/queue-topology";
 import {
   listDispatchableOutboxEvents,
   markOutboxEventDeadLetter,
@@ -11,8 +12,8 @@ import {
 import type { OutboxEvent } from "../outbox/outbox.types";
 import { runTrackedJob } from "./job-executor.service";
 import {
-  calculateNextAttemptAt,
-  shouldDeadLetter,
+  calculateOutboxNextAttemptAt,
+  shouldDeadLetterOutboxEvent,
 } from "./worker.retry-policy";
 import type { OutboxDispatchResult } from "./worker.types";
 
@@ -79,6 +80,7 @@ export async function dispatchPendingOutboxEvents(
 
         for (const event of events) {
           result.processed += 1;
+          const topology = resolveQueueTopologyForEvent(event.eventType);
 
           try {
             await publishOutboxEvent(event, publisher);
@@ -96,13 +98,16 @@ export async function dispatchPendingOutboxEvents(
                 eventType: event.eventType,
                 aggregateType: event.aggregateType,
                 aggregateId: event.aggregateId,
+                workloadCategory: topology.category,
+                routingKey: topology.routingKey,
+                queue: topology.queueName,
               },
             });
           } catch (error) {
             const attemptCount = event.attemptCount + 1;
             const errorMessage = getErrorMessage(error);
 
-            if (shouldDeadLetter(attemptCount)) {
+            if (shouldDeadLetterOutboxEvent(event.eventType, attemptCount)) {
               await markOutboxEventDeadLetter({
                 id: event.id,
                 attemptCount,
@@ -117,6 +122,9 @@ export async function dispatchPendingOutboxEvents(
                   outboxEventId: event.id,
                   eventType: event.eventType,
                   attemptCount,
+                  workloadCategory: topology.category,
+                  queue: topology.queueName,
+                  deadLetterQueue: topology.deadLetterQueueName,
                   error: errorMessage,
                 },
               });
@@ -124,7 +132,11 @@ export async function dispatchPendingOutboxEvents(
               continue;
             }
 
-            const nextAttemptAt = calculateNextAttemptAt(attemptCount, now);
+            const nextAttemptAt = calculateOutboxNextAttemptAt(
+              event.eventType,
+              attemptCount,
+              now
+            );
 
             await markOutboxEventFailed({
               id: event.id,
@@ -142,6 +154,8 @@ export async function dispatchPendingOutboxEvents(
                 eventType: event.eventType,
                 attemptCount,
                 nextAttemptAt: nextAttemptAt?.toISOString() ?? null,
+                workloadCategory: topology.category,
+                queue: topology.queueName,
                 error: errorMessage,
               },
             });
