@@ -72,3 +72,58 @@ export const AUDIT_ACTIONS = {
 } as const;
 
 export type AuditAction = (typeof AUDIT_ACTIONS)[keyof typeof AUDIT_ACTIONS];
+
+export type FinancialAuditRecord = {
+  table: string;
+  id: string;
+  record: Record<string, unknown>;
+};
+
+export type FinancialOutboxAuditEvent = {
+  id: string;
+  eventType: string;
+  aggregateType: string;
+  aggregateId: string;
+  payload: Record<string, unknown>;
+  status: string;
+  correlationId: string | null;
+  createdAt: string;
+  publishedAt: string | null;
+};
+
+export type FinancialAuthAuditEvent = {
+  id: string;
+  userId: string | null;
+  eventType: string;
+  metadata: Record<string, unknown>;
+  createdAt: string;
+};
+
+export type FinancialAuditGapSeverity = "INFO" | "WARNING" | "FAIL";
+
+export type FinancialAuditGap = {
+  severity: FinancialAuditGapSeverity;
+  code: string;
+  message: string;
+  entityType?: string;
+  entityId?: string;
+};
+
+export type FinancialAuditTrail = {
+  queryType: string;
+  queryId: string;
+  correlationIds: string[];
+  sourceRecords: FinancialAuditRecord[];
+  authAuditEvents: FinancialAuthAuditEvent[];
+  outboxEvents: FinancialOutboxAuditEvent[];
+  gaps: FinancialAuditGap[];
+  reconstructable: boolean;
+};
+
+export type FinancialAuditValidationInput =
+  | { ticketId: string }
+  | { reservationId: string }
+  | { ledgerTransactionId: string }
+  | { commissionRunId: string }
+  | { correlationId: string }
+  | { weekStart: string; weekEnd: string; currency?: string | null };
