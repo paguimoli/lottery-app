@@ -16,8 +16,11 @@ builder.Logging.AddJsonConsole(options =>
 var serviceConfiguration = ServiceConfiguration.FromEnvironment(builder.Environment);
 
 builder.Services.AddSingleton(serviceConfiguration);
+builder.Services.AddHttpClient();
 builder.Services.AddSingleton<InfrastructureReadinessChecks>();
 builder.Services.AddSingleton<CreditWalletContractService>();
+builder.Services.AddSingleton<CreditShadowCalculator>();
+builder.Services.AddSingleton<CreditShadowPersistence>();
 
 var app = builder.Build();
 

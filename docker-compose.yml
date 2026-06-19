@@ -22,6 +22,8 @@ services:
       SETTLEMENT_SERVICE_URL: ${SETTLEMENT_SERVICE_URL:-http://settlement-service:8080}
       LEDGER_SHADOW_MODE_ENABLED: ${LEDGER_SHADOW_MODE_ENABLED:-false}
       LEDGER_SERVICE_URL: ${LEDGER_SERVICE_URL:-http://ledger-service:8080}
+      CREDIT_SHADOW_MODE_ENABLED: ${CREDIT_SHADOW_MODE_ENABLED:-false}
+      CREDIT_SERVICE_URL: ${CREDIT_SERVICE_URL:-http://credit-wallet-service:8080}
     depends_on:
       - rabbitmq
       - redis
@@ -72,6 +74,8 @@ services:
       RABBITMQ_URL: ${RABBITMQ_URL:-amqp://lottery:lottery_dev_password@rabbitmq:5672}
       RABBITMQ_EXCHANGE_NAME: ${RABBITMQ_EXCHANGE_NAME:-lottery.events}
       REDIS_URL: ${REDIS_URL:-redis://redis:6379}
+      SUPABASE_URL: ${SUPABASE_URL:-${NEXT_PUBLIC_SUPABASE_URL:-http://localhost:54321}}
+      SUPABASE_SERVICE_ROLE_KEY: ${SUPABASE_SERVICE_ROLE_KEY:-dummy-service-role-key}
     depends_on:
       - rabbitmq
       - redis

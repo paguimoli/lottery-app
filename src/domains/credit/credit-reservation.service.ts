@@ -16,6 +16,11 @@ import type {
   ReserveCreditExposureInput,
 } from "./credit-reservation.types";
 import {
+  runCreditReleaseShadowComparison,
+  runCreditReservationShadowComparison,
+  runCreditSettlementShadowComparison,
+} from "./credit-shadow-client";
+import {
   validateApplyCreditSettlementInput,
   validateReleaseCreditExposureInput,
   validateReserveCreditExposureInput,
@@ -52,7 +57,11 @@ export async function reserveCreditExposure(
     },
   });
 
-  return reserveCreditExposureRecord(input);
+  const reservation = await reserveCreditExposureRecord(input);
+
+  await runCreditReservationShadowComparison({ input, reservation });
+
+  return reservation;
 }
 
 export async function releaseCreditExposure(
@@ -76,7 +85,11 @@ export async function releaseCreditExposure(
     },
   });
 
-  return releaseCreditExposureRecord(input);
+  const reservation = await releaseCreditExposureRecord(input);
+
+  await runCreditReleaseShadowComparison({ input, reservation });
+
+  return reservation;
 }
 
 export async function cancelCreditReservation(
@@ -121,7 +134,11 @@ export async function applyCreditSettlement(
     },
   });
 
-  return applyCreditSettlementRecord(input);
+  const application = await applyCreditSettlementRecord(input);
+
+  await runCreditSettlementShadowComparison({ input, application });
+
+  return application;
 }
 
 export async function getPlayerCreditSummary(

@@ -1,16 +1,16 @@
-# Credit Wallet Service Skeleton
+# Credit Wallet Service
 
-This service is the Phase 11.12 Credit Wallet Service skeleton. It exposes the Credit Wallet contract surface from Phase 11.11, but it does not yet own production credit operations.
+This service exposes the Credit Wallet contract surface and the Phase 13.6 shadow-mode execution endpoints. It does not own production credit operations.
 
 ## Purpose
 
-The future Credit Wallet Service will own credit limits, available credit, pending exposure, exposure reservation, exposure release, settlement application, credit adjustments, and credit wallet query interfaces.
+The future Credit Wallet Service will own credit limits, available credit, pending exposure, exposure reservation, exposure release, settlement application, credit adjustments, and credit wallet query interfaces. In this phase it can independently validate credit reservation, release, and settlement-credit calculations in shadow mode.
 
 Production credit behavior remains in the existing platform until contracts, reconciliation, feature flags, rollback, and operational monitoring are proven.
 
 ## Non-production status
 
-This service does not implement actual credit calculations, reservation logic, settlement logic, allocation logic, event publishing, event consuming, or production routing.
+This service does not implement production credit mutations, allocation logic, event publishing, event consuming, or production routing. Shadow mode never updates production balances, reservations, exposure, available credit, or outbox events.
 
 ## Supported endpoints
 
@@ -29,8 +29,13 @@ This service does not implement actual credit calculations, reservation logic, s
 - `GET /v1/credit-wallets/{playerId}/transactions`
 - `GET /v1/credit-wallets/{playerId}/exposure`
 - `GET /v1/credit-wallets/{playerId}/summary`
+- `POST /v1/credit/shadow/reserve`
+- `POST /v1/credit/shadow/release`
+- `POST /v1/credit/shadow/settlement`
 
 Credit command and query endpoints currently return safe placeholder `CREDIT_NOT_IMPLEMENTED` responses after basic contract validation.
+
+Shadow endpoints validate and compare credit calculations against an optional monolith result. They may persist shadow evidence only.
 
 ## Money standard
 
@@ -79,6 +84,8 @@ Supported models:
 - `RABBITMQ_URL`
 - `RABBITMQ_EXCHANGE_NAME`
 - `REDIS_URL`
+- `SUPABASE_URL`
+- `SUPABASE_SERVICE_ROLE_KEY`
 
 Inside Docker Compose:
 
@@ -88,6 +95,25 @@ Inside Docker Compose:
 ## Readiness checks
 
 `GET /health/ready` validates RabbitMQ TCP connectivity and Redis PING connectivity. The Credit Wallet-specific health endpoint reports database and Ledger Service as `not_configured` because this skeleton does not connect to production credit storage or Ledger Service yet.
+
+## Shadow persistence
+
+Shadow persistence writes only to:
+
+- `credit_shadow_runs`
+- `credit_shadow_mismatches`
+- `credit_shadow_failures`
+
+The migration `20260619000200_create_credit_shadow_reporting.sql` must be applied before persisted shadow reporting can pass QA.
+
+Mismatch categories:
+
+- `AVAILABLE_CREDIT_MISMATCH`
+- `RESERVATION_AMOUNT_MISMATCH`
+- `EXPOSURE_MISMATCH`
+- `SETTLEMENT_CREDIT_MISMATCH`
+- `CURRENCY_MISMATCH`
+- `UNKNOWN_MISMATCH`
 
 ## Validation commands
 
@@ -100,6 +126,8 @@ curl http://localhost:5300/health
 curl http://localhost:5300/health/live
 curl http://localhost:5300/health/ready
 curl http://localhost:5300/v1/credit-wallets/health
+npm run qa:credit-shadow
+npm run qa:credit-shadow-reporting
 git diff --check
 ```
 

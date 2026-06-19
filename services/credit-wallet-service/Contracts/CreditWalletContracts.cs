@@ -153,6 +153,79 @@ public sealed record CreditWalletHealthResponse(
     IReadOnlyDictionary<string, string> Dependencies,
     string CorrelationId);
 
+[JsonConverter(typeof(JsonStringEnumConverter))]
+public enum CreditShadowOperationType
+{
+    RESERVE,
+    RELEASE,
+    SETTLEMENT
+}
+
+[JsonConverter(typeof(JsonStringEnumConverter))]
+public enum CreditShadowComparisonStatus
+{
+    MATCH,
+    MISMATCH,
+    NOT_COMPARED
+}
+
+public sealed record CreditShadowExpectedResult(
+    long? AmountMinor,
+    long? AvailableCreditAfter,
+    long? ReservedAmount,
+    long? ReleasedAmount,
+    long? RemainingExposure,
+    long? BalanceImpact,
+    string? Currency);
+
+public sealed record CreditShadowExecuteRequest(
+    string? CorrelationId,
+    string AccountId,
+    string? WalletId,
+    string? TicketId,
+    string? ReservationId,
+    long AmountMinor,
+    string Currency,
+    long? AvailableCreditBefore,
+    long? PendingExposureBefore,
+    long? RemainingExposureBefore,
+    long? ReleasedAmountBefore,
+    long? BalanceBefore,
+    long? BalanceImpactMinor,
+    IReadOnlyDictionary<string, object?>? Metadata,
+    CreditShadowExpectedResult? ExpectedMonolithResult);
+
+public sealed record CreditShadowCalculatedResult(
+    CreditShadowOperationType OperationType,
+    string AccountId,
+    string? WalletId,
+    string? TicketId,
+    string? ReservationId,
+    long AmountMinor,
+    string Currency,
+    long? AvailableCreditAfter,
+    long? ReservedAmount,
+    long? ReleasedAmount,
+    long? RemainingExposure,
+    long? BalanceImpact,
+    bool IsValid,
+    IReadOnlyList<string> ValidationMessages);
+
+public sealed record CreditShadowMismatchDto(
+    string Field,
+    string Expected,
+    string Actual,
+    string MismatchType,
+    string Severity);
+
+public sealed record CreditShadowExecuteResponse(
+    bool Success,
+    string? ShadowCreditRunId,
+    CreditShadowCalculatedResult CalculatedResult,
+    CreditShadowComparisonStatus ComparisonStatus,
+    IReadOnlyList<CreditShadowMismatchDto> Mismatches,
+    string CorrelationId);
+
 public sealed record ErrorResponse(
     ErrorDto Error,
     string CorrelationId);

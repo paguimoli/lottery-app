@@ -1,5 +1,6 @@
 using CreditWalletService.Application;
 using CreditWalletService.Contracts;
+using CreditWalletService.Infrastructure;
 
 namespace CreditWalletService.Controllers;
 
@@ -291,6 +292,149 @@ public static class CreditWalletEndpoints
 
             return NotImplemented(context, service);
         });
+
+        var shadowGroup = app.MapGroup("/v1/credit/shadow");
+
+        shadowGroup.MapPost("/reserve", (
+            HttpContext context,
+            CreditShadowExecuteRequest request,
+            CreditShadowCalculator shadowCalculator,
+            CreditShadowPersistence shadowPersistence,
+            ILoggerFactory loggerFactory,
+            CancellationToken cancellationToken) =>
+            ExecuteShadow(
+                CreditShadowOperationType.RESERVE,
+                context,
+                request,
+                shadowCalculator,
+                shadowPersistence,
+                loggerFactory,
+                cancellationToken));
+
+        shadowGroup.MapPost("/release", (
+            HttpContext context,
+            CreditShadowExecuteRequest request,
+            CreditShadowCalculator shadowCalculator,
+            CreditShadowPersistence shadowPersistence,
+            ILoggerFactory loggerFactory,
+            CancellationToken cancellationToken) =>
+            ExecuteShadow(
+                CreditShadowOperationType.RELEASE,
+                context,
+                request,
+                shadowCalculator,
+                shadowPersistence,
+                loggerFactory,
+                cancellationToken));
+
+        shadowGroup.MapPost("/settlement", (
+            HttpContext context,
+            CreditShadowExecuteRequest request,
+            CreditShadowCalculator shadowCalculator,
+            CreditShadowPersistence shadowPersistence,
+            ILoggerFactory loggerFactory,
+            CancellationToken cancellationToken) =>
+            ExecuteShadow(
+                CreditShadowOperationType.SETTLEMENT,
+                context,
+                request,
+                shadowCalculator,
+                shadowPersistence,
+                loggerFactory,
+                cancellationToken));
+    }
+
+    private static async Task<IResult> ExecuteShadow(
+        CreditShadowOperationType operationType,
+        HttpContext context,
+        CreditShadowExecuteRequest request,
+        CreditShadowCalculator shadowCalculator,
+        CreditShadowPersistence shadowPersistence,
+        ILoggerFactory loggerFactory,
+        CancellationToken cancellationToken)
+    {
+        var correlationId = string.IsNullOrWhiteSpace(request.CorrelationId)
+            ? context.GetCorrelationId()
+            : request.CorrelationId.Trim();
+        var logger = loggerFactory.CreateLogger("CreditShadowEndpoints");
+
+        logger.LogInformation(
+            "Credit shadow execution requested. OperationType: {OperationType}. ReservationId: {ReservationId}. TicketId: {TicketId}. CorrelationId: {CorrelationId}.",
+            operationType,
+            request.ReservationId,
+            request.TicketId,
+            correlationId);
+
+        var normalizedRequest = request with { CorrelationId = correlationId };
+
+        try
+        {
+            var evaluation = shadowCalculator.Evaluate(operationType, normalizedRequest);
+            var persistedRunId = await shadowPersistence.PersistRunAsync(
+                operationType,
+                normalizedRequest,
+                evaluation,
+                cancellationToken);
+
+            return Results.Ok(new CreditShadowExecuteResponse(
+                true,
+                persistedRunId,
+                evaluation.CalculatedResult,
+                evaluation.ComparisonStatus,
+                evaluation.Mismatches,
+                correlationId));
+        }
+        catch (ArgumentException error)
+        {
+            await shadowPersistence.PersistFailureAsync(
+                normalizedRequest,
+                correlationId,
+                "VALIDATION_ERROR",
+                error.Message,
+                new Dictionary<string, object?>
+                {
+                    ["operationType"] = operationType.ToString(),
+                    ["reservationId"] = request.ReservationId,
+                    ["ticketId"] = request.TicketId,
+                    ["amountMinor"] = request.AmountMinor,
+                    ["currency"] = request.Currency
+                },
+                cancellationToken);
+
+            return Results.BadRequest(new ErrorResponse(
+                new ErrorDto(
+                    CreditWalletErrorCodes.ValidationFailed,
+                    error.Message),
+                correlationId));
+        }
+        catch (Exception error)
+        {
+            logger.LogError(
+                error,
+                "Credit shadow execution failed. OperationType: {OperationType}. CorrelationId: {CorrelationId}.",
+                operationType,
+                correlationId);
+
+            await shadowPersistence.PersistFailureAsync(
+                normalizedRequest,
+                correlationId,
+                "INTERNAL_ERROR",
+                "Credit shadow execution failed.",
+                new Dictionary<string, object?>
+                {
+                    ["operationType"] = operationType.ToString(),
+                    ["error"] = error.Message
+                },
+                cancellationToken);
+
+            return Results.Json(
+                new ErrorResponse(
+                    new ErrorDto(
+                        CreditWalletErrorCodes.InternalError,
+                        "Credit shadow execution failed."),
+                    correlationId),
+                statusCode: StatusCodes.Status500InternalServerError);
+        }
     }
 
     private static bool IsMissingIdempotencyKey(HttpContext context)
