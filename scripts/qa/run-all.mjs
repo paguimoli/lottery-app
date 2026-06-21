@@ -7,6 +7,7 @@ const steps = [
   "qa:auth:bootstrap",
   "qa:authority-control",
   "qa:settlement-authority",
+  "qa:settlement-authority-dry-run",
   "qa:shadow-readiness",
   "qa:shadow-analysis",
   "qa:credit-launch",
