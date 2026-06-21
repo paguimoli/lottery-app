@@ -13,6 +13,7 @@ const steps = [
   "qa:promotion-decision",
   "qa:dry-run-approval",
   "qa:promotion-approval",
+  "qa:promotion-simulation",
   "qa:settlement-authority-dry-run",
   "qa:credit-launch",
   "qa:worker-observability",
