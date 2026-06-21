@@ -6,6 +6,7 @@ loadLocalEnv();
 const steps = [
   "qa:auth:bootstrap",
   "qa:authority-control",
+  "qa:settlement-authority",
   "qa:shadow-readiness",
   "qa:credit-launch",
   "qa:worker-observability",
