@@ -29,6 +29,15 @@ export type AuthorityApprovalRecord = {
   createdAt: string;
 };
 
+export type CreateAuthorityApprovalInput = {
+  authorityCandidate: AuthorityDomain;
+  approvalType: AuthorityApprovalType;
+  approverUserId?: string | null;
+  approverUsername?: string | null;
+  justification: string;
+  metadata?: Record<string, unknown>;
+};
+
 export type AuthorityApprovalHistory = {
   approvals: AuthorityApprovalRecord[];
   generatedAt: string;

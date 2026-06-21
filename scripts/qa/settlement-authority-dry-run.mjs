@@ -90,17 +90,28 @@ assert(
   { approvalStatus }
 );
 assert(
-  approvalStatus.latestApprovals.dryRunApproval === null,
-  "Dry-run approval should not exist by default.",
+  approvalStatus.latestApprovals.dryRunApproval === null ||
+    approvalStatus.latestApprovals.dryRunApproval.approvalType ===
+      "DRY_RUN_APPROVAL",
+  "Dry-run approval should be absent or a captured DRY_RUN_APPROVAL.",
   { approvalStatus }
 );
-assert(
-  approvalStatus.approvalRequirements.includes(
-    "DRY_RUN_APPROVAL is required before dry-run activation."
-  ),
-  "Dry-run approval requirement missing.",
-  { approvalStatus }
-);
+if (approvalStatus.latestApprovals.dryRunApproval === null) {
+  assert(
+    approvalStatus.approvalRequirements.includes(
+      "DRY_RUN_APPROVAL is required before dry-run activation."
+    ),
+    "Dry-run approval requirement missing.",
+    { approvalStatus }
+  );
+} else {
+  assert(
+    approvalStatus.currentState === "READY_FOR_PROMOTION_APPROVAL" ||
+      approvalStatus.currentState === "READY_FOR_CONTROLLED_PROMOTION",
+    "Captured dry-run approval should advance the approval state.",
+    { approvalStatus }
+  );
+}
 assert(
   Array.isArray(approvalHistory.approvals),
   "Approval history should return an immutable append-only list.",

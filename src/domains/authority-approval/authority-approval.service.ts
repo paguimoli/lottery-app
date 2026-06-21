@@ -1,4 +1,6 @@
 import type { AuthorityDomain } from "../authority-control/authority-control.types";
+import type { AuthenticatedUser } from "../auth/auth-context.types";
+import { createOutboxEvent } from "../outbox/outbox.service";
 import { getPromotionDecision } from "../promotion-decision/promotion-decision.service";
 import type {
   AuthorityApprovalHistory,
@@ -8,13 +10,47 @@ import type {
   AuthorityPromotionCandidateState,
   SettlementDryRunEvaluation,
 } from "./authority-approval.types";
-import { listAuthorityApprovalRecords } from "./authority-approval.repository";
+import {
+  createAuthorityApprovalRecord,
+  findAuthorityApprovalRecordByCorrelationId,
+  listAuthorityApprovalRecords,
+} from "./authority-approval.repository";
+
+const RAW_EVIDENCE_WARNING =
+  "Raw evidence is not READY and must remain visible for review.";
+
+export class AuthorityApprovalValidationError extends Error {
+  readonly status: number;
+
+  constructor(message: string, status = 400) {
+    super(message);
+    this.name = "AuthorityApprovalValidationError";
+    this.status = status;
+  }
+}
 
 function latestApproval(
   approvals: AuthorityApprovalRecord[],
   approvalType: AuthorityApprovalType
 ) {
   return approvals.find((approval) => approval.approvalType === approvalType) ?? null;
+}
+
+function normalizeJustification(value: unknown) {
+  return typeof value === "string" ? value.trim() : "";
+}
+
+function normalizeAcknowledgedWarnings(value: unknown) {
+  if (!Array.isArray(value)) return [];
+
+  return value
+    .filter((warning): warning is string => typeof warning === "string")
+    .map((warning) => warning.trim())
+    .filter(Boolean);
+}
+
+function normalizeCorrelationId(value: unknown) {
+  return typeof value === "string" && value.trim() ? value.trim() : null;
 }
 
 function getApprovalRequirements({
@@ -51,6 +87,134 @@ export async function getAuthorityApprovalHistory(
   return {
     approvals: await listAuthorityApprovalRecords({ authorityCandidate }),
     generatedAt: new Date().toISOString(),
+  };
+}
+
+export async function approveSettlementDryRun({
+  actor,
+  domain,
+  justification,
+  acknowledgedWarnings,
+  correlationId,
+}: {
+  actor: AuthenticatedUser;
+  domain: unknown;
+  justification: unknown;
+  acknowledgedWarnings: unknown;
+  correlationId?: unknown;
+}): Promise<{
+  approval: AuthorityApprovalRecord;
+  idempotent: boolean;
+  promotionDecisionBefore: Awaited<ReturnType<typeof getPromotionDecision>>;
+  promotionDecisionAfter: Awaited<ReturnType<typeof getPromotionDecision>>;
+}> {
+  if (domain !== "SETTLEMENT") {
+    throw new AuthorityApprovalValidationError(
+      "Only SETTLEMENT dry-run approval is supported."
+    );
+  }
+
+  const normalizedCorrelationId = normalizeCorrelationId(correlationId);
+  if (normalizedCorrelationId) {
+    const existingApproval = await findAuthorityApprovalRecordByCorrelationId({
+      authorityCandidate: "SETTLEMENT",
+      approvalType: "DRY_RUN_APPROVAL",
+      correlationId: normalizedCorrelationId,
+    });
+
+    if (existingApproval) {
+      const promotionDecision = await getPromotionDecision({ domain: "SETTLEMENT" });
+
+      return {
+        approval: existingApproval,
+        idempotent: true,
+        promotionDecisionBefore: promotionDecision,
+        promotionDecisionAfter: promotionDecision,
+      };
+    }
+  }
+
+  const normalizedJustification = normalizeJustification(justification);
+  if (!normalizedJustification) {
+    throw new AuthorityApprovalValidationError("Justification is required.");
+  }
+
+  const normalizedAcknowledgedWarnings =
+    normalizeAcknowledgedWarnings(acknowledgedWarnings);
+  const promotionDecisionBefore = await getPromotionDecision({ domain: "SETTLEMENT" });
+
+  if (promotionDecisionBefore.decision !== "READY_FOR_DRY_RUN_APPROVAL") {
+    throw new AuthorityApprovalValidationError(
+      "Settlement is not ready for dry-run approval.",
+      409
+    );
+  }
+
+  if (promotionDecisionBefore.rollbackReadiness !== "READY") {
+    throw new AuthorityApprovalValidationError(
+      "Rollback readiness must be READY before dry-run approval.",
+      409
+    );
+  }
+
+  if (promotionDecisionBefore.comparisonMode !== "ENABLED") {
+    throw new AuthorityApprovalValidationError(
+      "Settlement comparison mode must be ENABLED before dry-run approval.",
+      409
+    );
+  }
+
+  if (promotionDecisionBefore.currentAuthority !== "MONOLITH") {
+    throw new AuthorityApprovalValidationError(
+      "Settlement authority must remain MONOLITH before dry-run approval.",
+      409
+    );
+  }
+
+  if (
+    promotionDecisionBefore.warnings.includes(RAW_EVIDENCE_WARNING) &&
+    !normalizedAcknowledgedWarnings.includes(RAW_EVIDENCE_WARNING)
+  ) {
+    throw new AuthorityApprovalValidationError(
+      "Raw evidence warning must be acknowledged before dry-run approval."
+    );
+  }
+
+  const approval = await createAuthorityApprovalRecord({
+    authorityCandidate: "SETTLEMENT",
+    approvalType: "DRY_RUN_APPROVAL",
+    approverUserId: actor.id,
+    approverUsername: actor.username,
+    justification: normalizedJustification,
+    metadata: {
+      acknowledgedWarnings: normalizedAcknowledgedWarnings,
+      approvalCapturedAt: new Date().toISOString(),
+      correlationId: normalizedCorrelationId,
+      promotionDecisionBefore: promotionDecisionBefore.decision,
+    },
+  });
+
+  await createOutboxEvent({
+    eventType: "authority.dry_run.approved",
+    aggregateType: "authority_candidate",
+    aggregateId: "SETTLEMENT",
+    correlationId: normalizedCorrelationId,
+    payload: {
+      domain: "SETTLEMENT",
+      actorUserId: actor.id,
+      approvalId: approval.id,
+      correlationId: normalizedCorrelationId,
+      createdAt: approval.createdAt,
+    },
+  });
+
+  const promotionDecisionAfter = await getPromotionDecision({ domain: "SETTLEMENT" });
+
+  return {
+    approval,
+    idempotent: false,
+    promotionDecisionBefore,
+    promotionDecisionAfter,
   };
 }
 

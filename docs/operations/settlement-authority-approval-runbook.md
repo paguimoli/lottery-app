@@ -10,6 +10,9 @@ Phase 14.2 does not perform promotion. It only exposes readiness, approval histo
 
 ```bash
 npm run ops:promotion-decision
+npm run ops:approve-settlement-dry-run -- \
+  --justification "Operator reviewed lifecycle-adjusted evidence and approves dry-run readiness." \
+  --acknowledge-warning "Raw evidence is not READY and must remain visible for review."
 npm run ops:authority-approval-status
 npm run ops:authority-approval-history
 npm run ops:settlement-dry-run-evaluation
@@ -29,7 +32,31 @@ Operators should use `npm run ops:promotion-decision` first. Raw evidence remain
 4. Confirm promotion readiness is `READY`.
 5. Confirm rollback readiness is `READY`.
 6. Review warnings, including raw evidence warnings.
-7. Record a `DRY_RUN_APPROVAL` through the documented future approval process.
+7. Record a `DRY_RUN_APPROVAL` through `npm run ops:approve-settlement-dry-run`.
+
+## Dry-Run Approval Capture
+
+Dry-run approval may only be captured by an authorized operator with administrative permissions.
+
+The approval request must include:
+
+- non-empty justification
+- acknowledged warnings
+- optional correlation ID for idempotent retry
+
+The raw evidence warning must be acknowledged exactly when present:
+
+`Raw evidence is not READY and must remain visible for review.`
+
+Dry-run approval records are append-only. Operators must not edit or delete approval history.
+
+Capturing dry-run approval does not:
+
+- promote Settlement Service
+- change `SETTLEMENT_AUTHORITY`
+- route settlements to Settlement Service
+- disable monolith settlement
+- approve final promotion
 
 ## Pre-Promotion Checklist
 

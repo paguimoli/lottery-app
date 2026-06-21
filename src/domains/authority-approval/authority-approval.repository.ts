@@ -2,6 +2,7 @@ import { supabaseServerAdmin } from "@/src/lib/supabase/server-admin-client";
 import type {
   AuthorityApprovalRecord,
   AuthorityApprovalType,
+  CreateAuthorityApprovalInput,
 } from "./authority-approval.types";
 import type { AuthorityDomain } from "../authority-control/authority-control.types";
 
@@ -20,9 +21,15 @@ const APPROVAL_SELECT =
   "id, authority_candidate, approval_type, approver_user_id, approver_username, justification, metadata, created_at";
 
 export class AuthorityApprovalRepositoryError extends Error {
-  constructor(message = "Authority approval persistence operation failed.") {
+  readonly details?: unknown;
+
+  constructor(
+    message = "Authority approval persistence operation failed.",
+    details?: unknown
+  ) {
     super(message);
     this.name = "AuthorityApprovalRepositoryError";
+    this.details = details;
   }
 }
 
@@ -71,4 +78,55 @@ export async function listAuthorityApprovalRecords({
   }
 
   return ((data ?? []) as AuthorityApprovalRow[]).map(mapApproval);
+}
+
+export async function findAuthorityApprovalRecordByCorrelationId({
+  authorityCandidate,
+  approvalType,
+  correlationId,
+}: {
+  authorityCandidate: AuthorityDomain;
+  approvalType: AuthorityApprovalType;
+  correlationId: string;
+}): Promise<AuthorityApprovalRecord | null> {
+  const { data, error } = await supabaseServerAdmin
+    .from("authority_approval_records")
+    .select(APPROVAL_SELECT)
+    .eq("authority_candidate", authorityCandidate)
+    .eq("approval_type", approvalType)
+    .eq("metadata->>correlationId", correlationId)
+    .order("created_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  if (error) {
+    if (isMissingTableError(error)) return null;
+
+    throw new AuthorityApprovalRepositoryError(error.message, error);
+  }
+
+  return data ? mapApproval(data as AuthorityApprovalRow) : null;
+}
+
+export async function createAuthorityApprovalRecord(
+  input: CreateAuthorityApprovalInput
+): Promise<AuthorityApprovalRecord> {
+  const { data, error } = await supabaseServerAdmin
+    .from("authority_approval_records")
+    .insert({
+      authority_candidate: input.authorityCandidate,
+      approval_type: input.approvalType,
+      approver_user_id: input.approverUserId ?? null,
+      approver_username: input.approverUsername ?? null,
+      justification: input.justification,
+      metadata: input.metadata ?? {},
+    })
+    .select(APPROVAL_SELECT)
+    .single();
+
+  if (error) {
+    throw new AuthorityApprovalRepositoryError(error.message, error);
+  }
+
+  return mapApproval(data as AuthorityApprovalRow);
 }
