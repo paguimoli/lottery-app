@@ -71,6 +71,23 @@ Expected:
 - `rollbackReady=true`
 - `promotionApprovalId` is present
 
+## Post-Promotion Monitoring
+
+Run:
+
+```bash
+npm run ops:settlement-post-promotion-status
+```
+
+Expected:
+
+- `authority=SERVICE`
+- `comparisonMode=ENABLED`
+- `serviceHealth.available=true`
+- `rollbackReadiness=READY`
+- post-promotion mismatch and failure counts are reviewed
+- recommendation is recorded in the release evidence package
+
 ## Rollback Simulation
 
 Run:
@@ -87,6 +104,25 @@ Expected:
 - rollback readiness `READY`
 - outbox event `authority.rollback.simulated` exists
 
+## Rollback Drill
+
+Run:
+
+```bash
+npm run ops:simulate-settlement-rollback-drill
+```
+
+Expected:
+
+- `drillPassed=true`
+- `authorityBefore=SERVICE`
+- `authorityAfter=SERVICE`
+- `authorityChanged=false`
+- `comparisonMode=ENABLED`
+- outbox event `authority.rollback.drill.simulated` exists
+
+The rollback drill is simulation-only. It must not change authority.
+
 ## Operator Checklist
 
 1. Run promotion simulation.
@@ -98,8 +134,10 @@ Expected:
 7. Verify Ledger and Credit authority remain `MONOLITH`.
 8. Verify comparison remains `ENABLED`.
 9. Verify rollback readiness remains `READY`.
-10. Verify post-promotion QA.
-11. Record results in the release evidence package.
+10. Run post-promotion monitoring.
+11. Run rollback drill.
+12. Verify post-promotion QA.
+13. Record results in the release evidence package.
 
 ## Emergency Rollback Procedure
 

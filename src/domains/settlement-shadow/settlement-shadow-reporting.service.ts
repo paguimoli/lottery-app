@@ -94,6 +94,12 @@ export async function getSettlementShadowSummary(): Promise<SettlementShadowSumm
   };
 }
 
+export async function getLatestSettlementShadowRun() {
+  const runs = await listShadowRuns({ limit: 1 });
+
+  return runs[0] ?? null;
+}
+
 export async function getSettlementShadowMismatches(
   filters: SettlementShadowListFilters
 ) {

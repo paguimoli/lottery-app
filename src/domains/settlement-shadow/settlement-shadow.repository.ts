@@ -136,11 +136,25 @@ function applyDateFilters<T>(
   return nextQuery as T;
 }
 
-export async function listShadowRuns(): Promise<SettlementShadowRun[]> {
-  const { data, error } = await supabaseServerAdmin
+export async function listShadowRuns(
+  filters: SettlementShadowListFilters = {}
+): Promise<SettlementShadowRun[]> {
+  let query = supabaseServerAdmin
     .from("settlement_shadow_runs")
     .select(RUN_SELECT)
-    .order("created_at", { ascending: false });
+    .order("created_at", { ascending: false })
+    .limit(filters.limit ?? 10000);
+
+  query = applyDateFilters(query, filters);
+
+  if (filters.ticketId) {
+    query = query.eq("ticket_id", filters.ticketId);
+  }
+  if (filters.gameId) {
+    query = query.eq("game_id", filters.gameId);
+  }
+
+  const { data, error } = await query;
 
   if (error) throw new SettlementShadowRepositoryError(error.message);
 

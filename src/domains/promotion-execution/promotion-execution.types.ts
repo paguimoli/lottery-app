@@ -50,6 +50,23 @@ export type SettlementRollbackSimulation = {
   simulatedAt: string;
 };
 
+export type SettlementRollbackDrill = {
+  domain: "SETTLEMENT";
+  mode: "SIMULATION";
+  authorityBefore: AuthorityValue;
+  authorityAfter: AuthorityValue;
+  comparisonMode: ComparisonMode;
+  rollbackReadiness: RollbackReadinessStatus;
+  serviceHealth: ServiceHealthStatus;
+  validationResults: PromotionExecutionValidationResult[];
+  blockers: string[];
+  warnings: string[];
+  drillPassed: boolean;
+  authorityChanged: boolean;
+  auditEvent: PromotionExecutionAuditEvent;
+  simulatedAt: string;
+};
+
 export type SettlementAuthorityPromotion = {
   domain: "SETTLEMENT";
   previousAuthority: AuthorityValue;
@@ -74,6 +91,31 @@ export type SettlementPromotionStatus = {
   evaluatedAt: string;
 };
 
+export type SettlementPostPromotionStatus = {
+  domain: "SETTLEMENT";
+  authority: AuthorityValue;
+  comparisonMode: ComparisonMode;
+  promotedAt: string | null;
+  serviceHealth: ServiceHealthStatus;
+  rollbackReadiness: RollbackReadinessStatus;
+  rollbackTrigger: {
+    shouldTriggerRollback: boolean;
+    status: RollbackReadinessStatus;
+    reasons: string[];
+  };
+  latestSettlementShadowComparison: {
+    id: string;
+    comparisonStatus: string;
+    ticketId: string;
+    correlationId: string | null;
+    createdAt: string;
+  } | null;
+  postPromotionMismatchCount: number;
+  postPromotionFailureCount: number;
+  recommendation: string;
+  evaluatedAt: string;
+};
+
 export type PromotionSimulationInput = {
   domain: AuthorityDomain;
   correlationId?: string | null;
@@ -81,6 +123,12 @@ export type PromotionSimulationInput = {
 
 export type RollbackSimulationInput = {
   domain: AuthorityDomain;
+  correlationId?: string | null;
+};
+
+export type RollbackDrillInput = {
+  domain: AuthorityDomain;
+  mode: "SIMULATION";
   correlationId?: string | null;
 };
 

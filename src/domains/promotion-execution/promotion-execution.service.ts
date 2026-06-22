@@ -8,16 +8,27 @@ import type { AuthenticatedUser } from "../auth/auth-context.types";
 import { createOutboxEvent, listRecentOutboxEvents } from "../outbox/outbox.service";
 import { getPromotionDecision } from "../promotion-decision/promotion-decision.service";
 import {
+  getSettlementAuthorityReadiness,
+} from "../settlement-authority/settlement-authority.service";
+import {
+  getLatestSettlementShadowRun,
+  getSettlementShadowFailures,
+  getSettlementShadowMismatches,
+} from "../settlement-shadow/settlement-shadow-reporting.service";
+import {
   assertSupportedPromotionExecutionDomain,
 } from "./promotion-execution.repository";
 import type {
   PromotionExecutionInput,
   PromotionExecutionValidationResult,
+  RollbackDrillInput,
   PromotionSimulationInput,
   RollbackSimulationInput,
   SettlementAuthorityPromotion,
+  SettlementPostPromotionStatus,
   SettlementPromotionStatus,
   SettlementPromotionSimulation,
+  SettlementRollbackDrill,
   SettlementRollbackSimulation,
 } from "./promotion-execution.types";
 
@@ -380,5 +391,188 @@ export async function getSettlementPromotionStatus(): Promise<SettlementPromotio
       promotionDecision.approvalState.promotionApproval?.id ??
       null,
     evaluatedAt: nowIso(),
+  };
+}
+
+function getPostPromotionRecommendation({
+  authority,
+  comparisonMode,
+  rollbackReady,
+  rollbackTriggerActive,
+  mismatchCount,
+  failureCount,
+  serviceAvailable,
+}: {
+  authority: string;
+  comparisonMode: string;
+  rollbackReady: boolean;
+  rollbackTriggerActive: boolean;
+  mismatchCount: number;
+  failureCount: number;
+  serviceAvailable: boolean;
+}) {
+  if (authority !== "SERVICE") {
+    return "BLOCKED: Settlement is not currently service-authoritative.";
+  }
+  if (comparisonMode !== "ENABLED") {
+    return "BLOCKED: Settlement comparison mode must be re-enabled.";
+  }
+  if (!serviceAvailable) {
+    return "ROLLBACK_RECOMMENDED: Settlement Service health is unavailable.";
+  }
+  if (!rollbackReady) {
+    return "REVIEW_REQUIRED: Rollback readiness is not READY.";
+  }
+  if (rollbackTriggerActive) {
+    return "REVIEW_REQUIRED: Rollback trigger conditions are active.";
+  }
+  if (mismatchCount > 0 || failureCount > 0) {
+    return "REVIEW_REQUIRED: Post-promotion shadow evidence needs operator review.";
+  }
+
+  return "CONTINUE_MONITORING: Settlement Service remains authoritative with no post-promotion mismatches or failures.";
+}
+
+export async function getSettlementPostPromotionStatus(): Promise<SettlementPostPromotionStatus> {
+  const [promotionStatus, rollbackReadiness, authorityReadiness] =
+    await Promise.all([
+      getSettlementPromotionStatus(),
+      validateRollbackReadiness(),
+      getSettlementAuthorityReadiness(),
+    ]);
+  const promotedAt = promotionStatus.promotedAt;
+  const sinceFilter = promotedAt ? { from: promotedAt, limit: 10000 } : { limit: 10000 };
+  const [latestShadowRun, mismatches, failures] = await Promise.all([
+    getLatestSettlementShadowRun(),
+    getSettlementShadowMismatches(sinceFilter),
+    getSettlementShadowFailures(sinceFilter),
+  ]);
+  const settlementRollback = rollbackReadiness.settlement;
+  const rollbackTrigger = authorityReadiness.rollbackTrigger;
+  const recommendation = getPostPromotionRecommendation({
+    authority: promotionStatus.authority,
+    comparisonMode: promotionStatus.comparisonMode,
+    rollbackReady: promotionStatus.rollbackReady,
+    rollbackTriggerActive: rollbackTrigger.shouldTriggerRollback,
+    mismatchCount: mismatches.length,
+    failureCount: failures.length,
+    serviceAvailable: settlementRollback.serviceHealth.available,
+  });
+
+  return {
+    domain: "SETTLEMENT",
+    authority: promotionStatus.authority,
+    comparisonMode: promotionStatus.comparisonMode,
+    promotedAt,
+    serviceHealth: settlementRollback.serviceHealth,
+    rollbackReadiness: settlementRollback.rollbackStatus,
+    rollbackTrigger,
+    latestSettlementShadowComparison: latestShadowRun
+      ? {
+          id: latestShadowRun.id,
+          comparisonStatus: latestShadowRun.comparisonStatus,
+          ticketId: latestShadowRun.ticketId,
+          correlationId: latestShadowRun.correlationId ?? null,
+          createdAt: latestShadowRun.createdAt,
+        }
+      : null,
+    postPromotionMismatchCount: mismatches.length,
+    postPromotionFailureCount: failures.length,
+    recommendation,
+    evaluatedAt: nowIso(),
+  };
+}
+
+export async function simulateSettlementRollbackDrill(
+  input: RollbackDrillInput
+): Promise<SettlementRollbackDrill> {
+  assertSupportedPromotionExecutionDomain(input.domain);
+
+  if (input.mode !== "SIMULATION") {
+    throw new PromotionExecutionValidationError(
+      "Rollback drill only supports SIMULATION mode."
+    );
+  }
+
+  const correlationId = normalizeCorrelationId(input.correlationId);
+  const authorityBefore = getAuthorityStatus().settlement;
+  const rollbackReadiness = await validateRollbackReadiness();
+  const settlementRollback = rollbackReadiness.settlement;
+  const validationResults = [
+    validationResult(
+      "AUTHORITY_SERVICE",
+      authorityBefore.authority === "SERVICE",
+      "Settlement authority must be SERVICE before rollback drill."
+    ),
+    validationResult(
+      "MONOLITH_PATH_AVAILABLE",
+      settlementRollback.monolithPathAvailable,
+      "Monolith path must be available."
+    ),
+    validationResult(
+      "SERVICE_PATH_AVAILABLE",
+      settlementRollback.serviceHealth.available,
+      "Settlement Service path must be available."
+    ),
+    validationResult(
+      "AUTHORITY_CONTROLS_AVAILABLE",
+      authorityBefore.authority === "MONOLITH" ||
+        authorityBefore.authority === "SERVICE",
+      "Authority controls must be available."
+    ),
+    validationResult(
+      "COMPARISON_ENABLED",
+      authorityBefore.comparisonMode === "ENABLED",
+      "Settlement comparison mode must be ENABLED."
+    ),
+    validationResult(
+      "ROLLBACK_READY",
+      settlementRollback.rollbackStatus === "READY",
+      "Rollback readiness must be READY."
+    ),
+  ];
+  const blockers = collectBlockers(validationResults);
+  const warnings = settlementRollback.reasons.filter(
+    (reason) => reason !== "Authority and rollback controls are within ready thresholds."
+  );
+  const simulatedAt = nowIso();
+  const auditEvent = await createOutboxEvent({
+    eventType: "authority.rollback.drill.simulated",
+    aggregateType: "authority_candidate",
+    aggregateId: "SETTLEMENT",
+    correlationId,
+    payload: {
+      domain: "SETTLEMENT",
+      mode: "SIMULATION",
+      authorityState: authorityBefore.authority,
+      comparisonMode: authorityBefore.comparisonMode,
+      rollbackReadiness: settlementRollback.rollbackStatus,
+      drillPassed: blockers.length === 0,
+      blockers,
+      warnings,
+      simulatedAt,
+    },
+  });
+  const authorityAfter = getAuthorityStatus().settlement;
+
+  return {
+    domain: "SETTLEMENT",
+    mode: "SIMULATION",
+    authorityBefore: authorityBefore.authority,
+    authorityAfter: authorityAfter.authority,
+    comparisonMode: authorityAfter.comparisonMode,
+    rollbackReadiness: settlementRollback.rollbackStatus,
+    serviceHealth: settlementRollback.serviceHealth,
+    validationResults,
+    blockers,
+    warnings,
+    drillPassed: blockers.length === 0,
+    authorityChanged: authorityBefore.authority !== authorityAfter.authority,
+    auditEvent: {
+      id: auditEvent.id,
+      eventType: auditEvent.eventType,
+      correlationId: auditEvent.correlationId ?? null,
+    },
+    simulatedAt,
   };
 }
