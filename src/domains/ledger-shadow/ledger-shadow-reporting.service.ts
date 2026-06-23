@@ -100,6 +100,16 @@ export async function getLedgerShadowMismatches(
   return listShadowMismatches(filters);
 }
 
+export async function getLedgerShadowRuns(filters: LedgerShadowListFilters = {}) {
+  return listShadowRuns(filters);
+}
+
+export async function getLatestLedgerShadowRun() {
+  const [run] = await listShadowRuns({ limit: 1 });
+
+  return run ?? null;
+}
+
 export async function getLedgerShadowFailures(filters: LedgerShadowListFilters) {
   return listShadowFailures(filters);
 }

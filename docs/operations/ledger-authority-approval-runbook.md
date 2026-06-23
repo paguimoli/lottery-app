@@ -217,3 +217,50 @@ After controlled promotion, verify:
 - rollback readiness remains `READY`.
 - credit launch QA passes.
 - worker observability QA passes.
+
+## Post-Promotion Monitoring
+
+Run:
+
+```bash
+npm run ops:ledger-post-promotion-status
+```
+
+Review:
+
+- authority and comparison mode;
+- promotion timestamp;
+- Ledger Service health;
+- rollback readiness;
+- raw, promotion, and post-promotion evidence summaries;
+- post-promotion mismatch and failure counts;
+- rollback trigger source;
+- operator recommendation.
+
+Raw evidence remains visible for audit. Rollback trigger evaluation must use lifecycle-effective promotion and post-promotion evidence so excluded QA evidence does not independently trigger rollback.
+
+## Rollback Drill
+
+Run:
+
+```bash
+npm run ops:simulate-ledger-rollback-drill
+```
+
+The drill is simulation-only. It must not change authority, routing, balances, or ledger posting behavior.
+
+Expected passing output:
+
+- `drillPassed = true`
+- `authorityBefore = SERVICE`
+- `authorityAfter = SERVICE`
+- `authorityChanged = false`
+- audit event `authority.ledger.rollback.drill.simulated`
+
+Escalate if:
+
+- Ledger Service health is unavailable;
+- rollback readiness is not `READY`;
+- comparison mode is disabled;
+- the drill reports an authority change;
+- lifecycle-effective post-promotion mismatches or failures appear.

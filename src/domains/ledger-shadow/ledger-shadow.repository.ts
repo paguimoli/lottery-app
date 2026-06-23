@@ -139,11 +139,25 @@ function applyDateFilters<T>(query: T, filters: LedgerShadowListFilters): T {
   return nextQuery as T;
 }
 
-export async function listShadowRuns(): Promise<LedgerShadowRun[]> {
-  const { data, error } = await supabaseServerAdmin
+export async function listShadowRuns(
+  filters: LedgerShadowListFilters = {}
+): Promise<LedgerShadowRun[]> {
+  let query = supabaseServerAdmin
     .from("ledger_shadow_runs")
     .select(RUN_SELECT)
-    .order("created_at", { ascending: false });
+    .order("created_at", { ascending: false })
+    .limit(filters.limit ?? 100);
+
+  query = applyDateFilters(query, filters);
+
+  if (filters.transactionId) {
+    query = query.eq("transaction_id", filters.transactionId);
+  }
+  if (filters.accountId) {
+    query = query.eq("account_id", filters.accountId);
+  }
+
+  const { data, error } = await query;
 
   if (error) throw new LedgerShadowRepositoryError(error.message);
 

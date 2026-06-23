@@ -7,7 +7,16 @@ import type { AuthenticatedUser } from "../auth/auth-context.types";
 import { createOutboxEvent, listRecentOutboxEvents } from "../outbox/outbox.service";
 import { getPromotionDecision } from "../promotion-decision/promotion-decision.service";
 import {
+  getShadowAnalysisSummary,
+  listShadowAnalysisFailures,
+  listShadowAnalysisMismatches,
+} from "../shadow-analysis/shadow-analysis.service";
+import type { ClassifiedShadowEvidence } from "../shadow-analysis/shadow-analysis.types";
+import {
+  getLatestLedgerShadowRun,
+  getLedgerShadowFailures,
   getLedgerShadowMismatches,
+  getLedgerShadowRuns,
   getLedgerShadowSummary,
 } from "../ledger-shadow/ledger-shadow-reporting.service";
 import type {
@@ -23,7 +32,12 @@ import type {
   LedgerAuthorityReadiness,
   LedgerAuthorityRuntimeRoute,
   LedgerDryRunEvaluation,
+  LedgerPostPromotionStatus,
   LedgerPromotionStatus,
+  LedgerRollbackDrill,
+  LedgerRollbackEvaluationDetails,
+  LedgerRollbackTriggerEvidenceSource,
+  LedgerRollbackTriggerEvidenceSummary,
   LedgerRollbackTriggerEvaluation,
   LedgerSimulationResult,
 } from "./ledger-authority.types";
@@ -722,5 +736,428 @@ export async function getLedgerPromotionStatus(): Promise<LedgerPromotionStatus>
       promotionDecision.approvalState.promotionApproval?.id ??
       null,
     evaluatedAt: nowIso(),
+  };
+}
+
+function getPostPromotionRecommendation({
+  authority,
+  comparisonMode,
+  rollbackReady,
+  rollbackTrigger,
+  serviceAvailable,
+}: {
+  authority: string;
+  comparisonMode: string;
+  rollbackReady: boolean;
+  rollbackTrigger: LedgerPostPromotionStatus["rollbackTrigger"];
+  serviceAvailable: boolean;
+}) {
+  if (authority !== "SERVICE") {
+    return "BLOCKED: Ledger is not currently service-authoritative.";
+  }
+  if (comparisonMode !== "ENABLED") {
+    return "BLOCKED: Ledger comparison mode must be re-enabled.";
+  }
+  if (!serviceAvailable) {
+    return "ROLLBACK_RECOMMENDED: Ledger Service health is unavailable.";
+  }
+  if (!rollbackReady) {
+    return "REVIEW_REQUIRED: Rollback readiness is not READY.";
+  }
+  if (rollbackTrigger.shouldTriggerRollback) {
+    return "ROLLBACK_RECOMMENDED: Aligned rollback trigger conditions are active.";
+  }
+  if (rollbackTrigger.status === "WARNING") {
+    return "REVIEW_REQUIRED: Aligned rollback evidence needs operator review.";
+  }
+
+  return "CONTINUE_MONITORING: Ledger Service remains authoritative with aligned rollback evidence ready.";
+}
+
+function summarizeReadiness({
+  source,
+  totalRuns,
+  matches,
+  mismatches,
+  failures,
+  criticalMismatchCount,
+  effectiveMismatchCount,
+  effectiveFailureCount,
+  excludedMismatchCount,
+  excludedFailureCount,
+  reasons,
+}: Omit<
+  LedgerRollbackTriggerEvidenceSummary,
+  "mismatchRate" | "failureRate" | "readiness"
+>): LedgerRollbackTriggerEvidenceSummary {
+  const totalEvents = totalRuns + failures;
+  const mismatchRate = rate(mismatches, totalEvents);
+  const failureRate = rate(failures, totalEvents);
+  let readiness: LedgerRollbackTriggerEvidenceSummary["readiness"] = "READY";
+
+  if (criticalMismatchCount > 0 || mismatches > 0 || failures > 0) {
+    readiness = criticalMismatchCount > 0 ? "BLOCKED" : "WARNING";
+  }
+
+  return {
+    source,
+    totalRuns,
+    matches,
+    mismatches,
+    failures,
+    criticalMismatchCount,
+    mismatchRate,
+    failureRate,
+    readiness,
+    effectiveMismatchCount,
+    effectiveFailureCount,
+    excludedMismatchCount,
+    excludedFailureCount,
+    reasons: reasons.length > 0 ? reasons : [`${source} is within ready thresholds.`],
+  };
+}
+
+function rawEvidenceHasTrigger(summary: LedgerRollbackTriggerEvidenceSummary) {
+  return summary.readiness !== "READY";
+}
+
+function effectiveEvidenceHasTrigger(summary: LedgerRollbackTriggerEvidenceSummary) {
+  return summary.readiness === "BLOCKED";
+}
+
+function lifecycleParticipatesInRollback(evidence: ClassifiedShadowEvidence) {
+  return (
+    evidence.lifecycleStatus === "ACTIVE" ||
+    evidence.lifecycleStatus === "REVIEW_REQUIRED"
+  );
+}
+
+function isOnOrAfter(value: string, floor: string | null) {
+  if (!floor) return true;
+
+  return new Date(value).getTime() >= new Date(floor).getTime();
+}
+
+function uniqueShadowRunCount(evidence: ClassifiedShadowEvidence[]) {
+  return new Set(
+    evidence
+      .map((item) => item.shadowRunId)
+      .filter((shadowRunId): shadowRunId is string => Boolean(shadowRunId))
+  ).size;
+}
+
+function getAlignedRollbackEvaluation({
+  authority,
+  rollbackReady,
+  rawEvidence,
+  promotionEvidence,
+  postPromotionEvidence,
+}: {
+  authority: string;
+  rollbackReady: boolean;
+  rawEvidence: LedgerRollbackTriggerEvidenceSummary;
+  promotionEvidence: LedgerRollbackTriggerEvidenceSummary;
+  postPromotionEvidence: LedgerRollbackTriggerEvidenceSummary;
+}): {
+  rollbackTrigger: LedgerPostPromotionStatus["rollbackTrigger"];
+  triggerSource: LedgerRollbackTriggerEvidenceSource;
+  details: LedgerRollbackEvaluationDetails;
+} {
+  const blockers: string[] = [];
+  const warnings: string[] = [];
+  const rawTriggerActive = rawEvidenceHasTrigger(rawEvidence);
+  const promotionTriggerActive = effectiveEvidenceHasTrigger(promotionEvidence);
+  const postPromotionTriggerActive = effectiveEvidenceHasTrigger(postPromotionEvidence);
+  const triggerSource: LedgerRollbackTriggerEvidenceSource =
+    authority === "SERVICE" ? "POST_PROMOTION_EVIDENCE" : "PROMOTION_EVIDENCE";
+
+  if (!rollbackReady) {
+    blockers.push("Rollback readiness is not READY.");
+  }
+  if (postPromotionTriggerActive) {
+    blockers.push("Post-promotion evidence has blocking mismatches or failures.");
+  }
+  if (promotionTriggerActive) {
+    blockers.push("Promotion lifecycle evidence has blocking mismatches or failures.");
+  }
+  if (rawTriggerActive && !promotionTriggerActive && !postPromotionTriggerActive) {
+    warnings.push(
+      "Raw historical evidence is not READY but is excluded from aligned rollback trigger evaluation."
+    );
+  }
+  if (postPromotionEvidence.readiness === "WARNING") {
+    warnings.push("Post-promotion evidence has warning-level mismatches or failures.");
+  }
+
+  const shouldTriggerRollback = authority === "SERVICE" && blockers.length > 0;
+  const status: LedgerRollbackTriggerEvidenceSummary["readiness"] =
+    shouldTriggerRollback ? "BLOCKED" : warnings.length > 0 ? "WARNING" : "READY";
+  const reasons =
+    blockers.length > 0 || warnings.length > 0
+      ? [...blockers, ...warnings]
+      : ["Aligned rollback evidence is within ready thresholds."];
+
+  return {
+    triggerSource,
+    rollbackTrigger: {
+      shouldTriggerRollback,
+      status,
+      reasons,
+    },
+    details: {
+      triggerSource,
+      rawTriggerActive,
+      promotionTriggerActive,
+      postPromotionTriggerActive,
+      blockers,
+      warnings,
+      evaluatedAt: nowIso(),
+    },
+  };
+}
+
+export async function getLedgerPostPromotionStatus(): Promise<LedgerPostPromotionStatus> {
+  const [promotionStatus, rollbackReadiness, shadowAnalysis] =
+    await Promise.all([
+      getLedgerPromotionStatus(),
+      validateRollbackReadiness(),
+      getShadowAnalysisSummary("all"),
+    ]);
+  const promotedAt = promotionStatus.promotedAt;
+  const sinceFilter = promotedAt ? { from: promotedAt, limit: 10000 } : { limit: 10000 };
+  const [
+    latestShadowRun,
+    runs,
+    mismatches,
+    failures,
+    classifiedMismatches,
+    classifiedFailures,
+  ] = await Promise.all([
+    getLatestLedgerShadowRun(),
+    getLedgerShadowRuns(sinceFilter),
+    getLedgerShadowMismatches(sinceFilter),
+    getLedgerShadowFailures(sinceFilter),
+    listShadowAnalysisMismatches("all"),
+    listShadowAnalysisFailures("all"),
+  ]);
+  const ledgerRollback = rollbackReadiness.ledger;
+  const ledgerEvidence = shadowAnalysis.domains.ledger;
+  const rawEvidenceSummary = summarizeReadiness({
+    source: "RAW_EVIDENCE",
+    totalRuns: ledgerEvidence.rawReadiness.totalRuns,
+    matches: ledgerEvidence.rawReadiness.matches,
+    mismatches: ledgerEvidence.rawReadiness.mismatches,
+    failures: ledgerEvidence.rawReadiness.failures,
+    criticalMismatchCount: ledgerEvidence.rawReadiness.criticalMismatchCount,
+    effectiveMismatchCount: ledgerEvidence.rawReadiness.mismatches,
+    effectiveFailureCount: ledgerEvidence.rawReadiness.failures,
+    excludedMismatchCount:
+      ledgerEvidence.rawReadiness.mismatches -
+      ledgerEvidence.promotionReadiness.mismatches,
+    excludedFailureCount:
+      ledgerEvidence.rawReadiness.failures -
+      ledgerEvidence.promotionReadiness.failures,
+    reasons: ledgerEvidence.rawReadiness.reasons,
+  });
+  const promotionEvidenceSummary = summarizeReadiness({
+    source: "PROMOTION_EVIDENCE",
+    totalRuns: ledgerEvidence.promotionReadiness.totalRuns,
+    matches: ledgerEvidence.promotionReadiness.matches,
+    mismatches: ledgerEvidence.promotionReadiness.mismatches,
+    failures: ledgerEvidence.promotionReadiness.failures,
+    criticalMismatchCount: ledgerEvidence.promotionReadiness.criticalMismatchCount,
+    effectiveMismatchCount: ledgerEvidence.promotionReadiness.mismatches,
+    effectiveFailureCount: ledgerEvidence.promotionReadiness.failures,
+    excludedMismatchCount:
+      ledgerEvidence.rawReadiness.mismatches -
+      ledgerEvidence.promotionReadiness.mismatches,
+    excludedFailureCount:
+      ledgerEvidence.rawReadiness.failures -
+      ledgerEvidence.promotionReadiness.failures,
+    reasons: ledgerEvidence.promotionReadiness.reasons,
+  });
+  const postPromotionClassifiedMismatches = classifiedMismatches.filter(
+    (mismatch) =>
+      mismatch.domain === "LEDGER" && isOnOrAfter(mismatch.createdAt, promotedAt)
+  );
+  const postPromotionClassifiedFailures = classifiedFailures.filter(
+    (failure) =>
+      failure.domain === "LEDGER" && isOnOrAfter(failure.createdAt, promotedAt)
+  );
+  const postPromotionEffectiveMismatches =
+    postPromotionClassifiedMismatches.filter(lifecycleParticipatesInRollback);
+  const postPromotionEffectiveFailures =
+    postPromotionClassifiedFailures.filter(lifecycleParticipatesInRollback);
+  const postPromotionEffectiveMismatchCount = uniqueShadowRunCount(
+    postPromotionEffectiveMismatches
+  );
+  const postPromotionEffectiveFailureCount =
+    postPromotionEffectiveFailures.length;
+  const postPromotionMatches = runs.filter(
+    (run) => run.comparisonStatus === "MATCH"
+  ).length;
+  const postPromotionCriticalMismatchCount = postPromotionEffectiveMismatches.filter(
+    (mismatch) => mismatch.severity === "CRITICAL"
+  ).length;
+  const postPromotionEvidenceSummary = summarizeReadiness({
+    source: "POST_PROMOTION_EVIDENCE",
+    totalRuns: runs.length,
+    matches: postPromotionMatches,
+    mismatches: postPromotionEffectiveMismatchCount,
+    failures: postPromotionEffectiveFailureCount,
+    criticalMismatchCount: postPromotionCriticalMismatchCount,
+    effectiveMismatchCount: postPromotionEffectiveMismatchCount,
+    effectiveFailureCount: postPromotionEffectiveFailureCount,
+    excludedMismatchCount: Math.max(
+      0,
+      mismatches.length - postPromotionEffectiveMismatches.length
+    ),
+    excludedFailureCount: Math.max(
+      0,
+      failures.length - postPromotionEffectiveFailureCount
+    ),
+    reasons:
+      postPromotionEffectiveMismatchCount === 0 &&
+      postPromotionEffectiveFailureCount === 0
+        ? ["Post-promotion evidence is within ready thresholds."]
+        : ["Post-promotion lifecycle-effective evidence contains mismatches or failures."],
+  });
+  const alignedEvaluation = getAlignedRollbackEvaluation({
+    authority: promotionStatus.authority,
+    rollbackReady: promotionStatus.rollbackReady,
+    rawEvidence: rawEvidenceSummary,
+    promotionEvidence: promotionEvidenceSummary,
+    postPromotionEvidence: postPromotionEvidenceSummary,
+  });
+  const recommendation = getPostPromotionRecommendation({
+    authority: promotionStatus.authority,
+    comparisonMode: promotionStatus.comparisonMode,
+    rollbackReady: promotionStatus.rollbackReady,
+    rollbackTrigger: alignedEvaluation.rollbackTrigger,
+    serviceAvailable: ledgerRollback.serviceHealth.available,
+  });
+
+  return {
+    domain: "LEDGER",
+    authority: promotionStatus.authority,
+    comparisonMode: promotionStatus.comparisonMode,
+    promotedAt,
+    serviceHealth: ledgerRollback.serviceHealth,
+    rollbackReadiness: ledgerRollback.rollbackStatus,
+    rollbackTrigger: alignedEvaluation.rollbackTrigger,
+    triggerSource: alignedEvaluation.triggerSource,
+    rawEvidenceSummary,
+    promotionEvidenceSummary,
+    postPromotionEvidenceSummary,
+    rollbackEvaluationDetails: alignedEvaluation.details,
+    latestLedgerShadowComparison: latestShadowRun
+      ? {
+          id: latestShadowRun.id,
+          comparisonStatus: latestShadowRun.comparisonStatus,
+          transactionId: latestShadowRun.transactionId,
+          correlationId: latestShadowRun.correlationId ?? null,
+          createdAt: latestShadowRun.createdAt,
+        }
+      : null,
+    postPromotionMismatchCount: postPromotionEffectiveMismatchCount,
+    postPromotionFailureCount: postPromotionEffectiveFailureCount,
+    recommendation,
+    evaluatedAt: nowIso(),
+  };
+}
+
+export async function simulateLedgerRollbackDrill({
+  mode,
+  correlationId,
+}: {
+  mode: unknown;
+  correlationId?: unknown;
+}): Promise<LedgerRollbackDrill> {
+  if (mode !== "SIMULATION") {
+    throw new LedgerAuthorityValidationError(
+      "Ledger rollback drill only supports SIMULATION mode."
+    );
+  }
+
+  const normalizedCorrelationId = normalizeCorrelationId(correlationId);
+  const authorityBefore = getAuthorityStatus().ledger;
+  const rollbackReadiness = await validateRollbackReadiness();
+  const ledgerRollback = rollbackReadiness.ledger;
+  const validationResults = [
+    validationResult(
+      "AUTHORITY_SERVICE",
+      authorityBefore.authority === "SERVICE",
+      "Ledger authority must be SERVICE before rollback drill."
+    ),
+    validationResult(
+      "MONOLITH_PATH_AVAILABLE",
+      ledgerRollback.monolithPathAvailable,
+      "Ledger monolith path must be available."
+    ),
+    validationResult(
+      "SERVICE_PATH_AVAILABLE",
+      ledgerRollback.serviceHealth.available,
+      "Ledger Service path must be available."
+    ),
+    validationResult(
+      "AUTHORITY_CONTROLS_AVAILABLE",
+      authorityBefore.authority === "MONOLITH" ||
+        authorityBefore.authority === "SERVICE",
+      "Ledger authority controls must be available."
+    ),
+    validationResult(
+      "COMPARISON_ENABLED",
+      authorityBefore.comparisonMode === "ENABLED",
+      "Ledger comparison mode must be ENABLED."
+    ),
+    validationResult(
+      "ROLLBACK_READY",
+      ledgerRollback.rollbackStatus === "READY",
+      "Ledger rollback readiness must be READY."
+    ),
+  ];
+  const blockers = collectBlockers(validationResults);
+  const warnings = ledgerRollback.reasons.filter(
+    (reason) => reason !== "Authority and rollback controls are within ready thresholds."
+  );
+  const simulatedAt = nowIso();
+  const auditEvent = await createOutboxEvent({
+    eventType: "authority.ledger.rollback.drill.simulated",
+    aggregateType: "authority_candidate",
+    aggregateId: "LEDGER",
+    correlationId: normalizedCorrelationId,
+    payload: {
+      domain: "LEDGER",
+      mode: "SIMULATION",
+      authorityState: authorityBefore.authority,
+      comparisonMode: authorityBefore.comparisonMode,
+      rollbackReadiness: ledgerRollback.rollbackStatus,
+      drillPassed: blockers.length === 0,
+      blockers,
+      warnings,
+      simulatedAt,
+    },
+  });
+  const authorityAfter = getAuthorityStatus().ledger;
+
+  return {
+    domain: "LEDGER",
+    mode: "SIMULATION",
+    authorityBefore: authorityBefore.authority,
+    authorityAfter: authorityAfter.authority,
+    comparisonMode: authorityAfter.comparisonMode,
+    rollbackReadiness: ledgerRollback.rollbackStatus,
+    serviceHealth: ledgerRollback.serviceHealth,
+    validationResults,
+    blockers,
+    warnings,
+    drillPassed: blockers.length === 0,
+    authorityChanged: authorityBefore.authority !== authorityAfter.authority,
+    auditEvent: {
+      id: auditEvent.id,
+      eventType: auditEvent.eventType,
+      correlationId: auditEvent.correlationId ?? null,
+    },
+    simulatedAt,
   };
 }
