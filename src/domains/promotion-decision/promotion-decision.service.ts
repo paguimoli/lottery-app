@@ -4,6 +4,7 @@ import type {
   AuthorityApprovalRecord,
   AuthorityApprovalType,
 } from "../authority-approval/authority-approval.types";
+import { getLedgerAuthorityReadiness } from "../ledger-authority/ledger-authority.service";
 import { getSettlementAuthorityReadiness } from "../settlement-authority/settlement-authority.service";
 import {
   getShadowAnalysisSummary,
@@ -124,7 +125,7 @@ export async function getPromotionDecision({
 }: {
   domain?: AuthorityDomain;
 } = {}): Promise<PromotionDecision> {
-  if (domain !== "SETTLEMENT") {
+  if (domain === "CREDIT") {
     return {
       domain,
       decision: "BLOCKED",
@@ -163,33 +164,36 @@ export async function getPromotionDecision({
     };
   }
 
+  const isLedger = domain === "LEDGER";
   const [
-    settlementReadiness,
+    authorityReadiness,
     rollbackReadiness,
     shadowAnalysis,
     approvals,
     mismatches,
     failures,
   ] = await Promise.all([
-    getSettlementAuthorityReadiness(),
+    isLedger ? getLedgerAuthorityReadiness() : getSettlementAuthorityReadiness(),
     validateRollbackReadiness(),
     getShadowAnalysisSummary("all"),
-    listPromotionApprovalRecords("SETTLEMENT"),
+    listPromotionApprovalRecords(domain),
     listShadowAnalysisMismatches("all"),
     listShadowAnalysisFailures("all"),
   ]);
   const dryRunApproval = latestApproval(approvals, "DRY_RUN_APPROVAL");
   const promotionApproval = latestApproval(approvals, "PROMOTION_APPROVAL");
   const rollbackApproval = latestApproval(approvals, "ROLLBACK_APPROVAL");
-  const settlementEvidence = shadowAnalysis.domains.settlement;
+  const domainEvidence = isLedger
+    ? shadowAnalysis.domains.ledger
+    : shadowAnalysis.domains.settlement;
   const promotionMismatches = mismatches.filter(
     (evidence) =>
-      evidence.domain === "SETTLEMENT" &&
+      evidence.domain === domain &&
       lifecycleParticipatesInPromotion(evidence)
   );
   const promotionFailures = failures.filter(
     (evidence) =>
-      evidence.domain === "SETTLEMENT" &&
+      evidence.domain === domain &&
       lifecycleParticipatesInPromotion(evidence)
   );
   const criticalUnexplainedMismatches = promotionMismatches.filter(
@@ -198,33 +202,39 @@ export async function getPromotionDecision({
   const unexplainedFailures = promotionFailures.filter(isUnexplainedFailure);
   const blockingReasons: string[] = [];
   const warnings: string[] = [];
-  const serviceHealth = rollbackReadiness.settlement.serviceHealth;
+  const domainRollback = isLedger ? rollbackReadiness.ledger : rollbackReadiness.settlement;
+  const serviceHealth = domainRollback.serviceHealth;
+  const label = isLedger ? "Ledger" : "Settlement";
 
-  if (settlementEvidence.promotionReadiness.readinessStatus !== "READY") {
+  if (domainEvidence.promotionReadiness.readinessStatus !== "READY") {
     blockingReasons.push(
-      `Promotion evidence is ${settlementEvidence.promotionReadiness.readinessStatus}.`
+      `Promotion evidence is ${domainEvidence.promotionReadiness.readinessStatus}.`
     );
   }
-  if (rollbackReadiness.settlement.rollbackStatus === "BLOCKED") {
+  if (domainRollback.rollbackStatus === "BLOCKED") {
     blockingReasons.push("Rollback readiness is BLOCKED.");
   }
   if (!serviceHealth.available) {
-    blockingReasons.push("Settlement Service health is unavailable.");
+    blockingReasons.push(`${label} Service health is unavailable.`);
   }
   if (criticalUnexplainedMismatches.length > 0) {
-    blockingReasons.push("Critical unexplained settlement mismatches are present.");
+    blockingReasons.push(
+      `Critical unexplained ${label.toLowerCase()} mismatches are present.`
+    );
   }
   if (unexplainedFailures.length > 0) {
-    blockingReasons.push("Unexplained settlement shadow failures are present.");
+    blockingReasons.push(
+      `Unexplained ${label.toLowerCase()} shadow failures are present.`
+    );
   }
-  if (settlementReadiness.comparisonMode !== "ENABLED") {
-    blockingReasons.push("Settlement comparison mode is not ENABLED.");
+  if (authorityReadiness.comparisonMode !== "ENABLED") {
+    blockingReasons.push(`${label} comparison mode is not ENABLED.`);
   }
 
-  if (settlementReadiness.authority !== "MONOLITH") {
-    warnings.push("Settlement authority is not MONOLITH.");
+  if (authorityReadiness.authority !== "MONOLITH") {
+    warnings.push(`${label} authority is not MONOLITH.`);
   }
-  if (settlementEvidence.rawReadiness.readinessStatus !== "READY") {
+  if (domainEvidence.rawReadiness.readinessStatus !== "READY") {
     warnings.push("Raw evidence is not READY and must remain visible for review.");
   }
   if (!dryRunApproval) {
@@ -235,9 +245,9 @@ export async function getPromotionDecision({
   }
 
   const rollbackWouldTrigger =
-    settlementReadiness.authority === "SERVICE" && blockingReasons.length > 0;
+    authorityReadiness.authority === "SERVICE" && blockingReasons.length > 0;
   const decision = getDecisionState({
-    currentAuthority: settlementReadiness.authority,
+    currentAuthority: authorityReadiness.authority,
     rollbackWouldTrigger,
     blockingReasons,
     hasDryRunApproval: Boolean(dryRunApproval),
@@ -245,15 +255,15 @@ export async function getPromotionDecision({
   });
 
   return {
-    domain: "SETTLEMENT",
+    domain,
     decision,
-    currentAuthority: settlementReadiness.authority,
-    comparisonMode: settlementReadiness.comparisonMode,
-    dryRunMode: settlementReadiness.dryRunMode,
-    rawReadiness: toEvidenceReadiness(settlementEvidence.rawReadiness),
-    adjustedReadiness: toEvidenceReadiness(settlementEvidence.adjustedReadiness),
-    promotionReadiness: toEvidenceReadiness(settlementEvidence.promotionReadiness),
-    rollbackReadiness: rollbackReadiness.settlement.rollbackStatus,
+    currentAuthority: authorityReadiness.authority,
+    comparisonMode: authorityReadiness.comparisonMode,
+    dryRunMode: authorityReadiness.dryRunMode,
+    rawReadiness: toEvidenceReadiness(domainEvidence.rawReadiness),
+    adjustedReadiness: toEvidenceReadiness(domainEvidence.adjustedReadiness),
+    promotionReadiness: toEvidenceReadiness(domainEvidence.promotionReadiness),
+    rollbackReadiness: domainRollback.rollbackStatus,
     approvalState: {
       dryRunApproval,
       promotionApproval,

@@ -354,10 +354,12 @@ export async function approveSettlementPromotion({
   };
 }
 
-export async function getAuthorityApprovalStatus(): Promise<AuthorityApprovalStatus> {
+export async function getAuthorityApprovalStatus(
+  authorityCandidate: AuthorityDomain = "SETTLEMENT"
+): Promise<AuthorityApprovalStatus> {
   const [history, promotionDecision] = await Promise.all([
-    getAuthorityApprovalHistory("SETTLEMENT"),
-    getPromotionDecision({ domain: "SETTLEMENT" }),
+    getAuthorityApprovalHistory(authorityCandidate),
+    getPromotionDecision({ domain: authorityCandidate }),
   ]);
   const approvals = history.approvals;
   const dryRunApproval = latestApproval(approvals, "DRY_RUN_APPROVAL");
@@ -367,7 +369,7 @@ export async function getAuthorityApprovalStatus(): Promise<AuthorityApprovalSta
   const hasPromotionApproval = Boolean(promotionApproval);
 
   return {
-    authorityCandidate: "SETTLEMENT",
+    authorityCandidate,
     currentState: promotionDecision.decision,
     recommendedState: promotionDecision.decision,
     approvalRequirements: getApprovalRequirements({

@@ -21,6 +21,12 @@ const steps = [
   "qa:settlement-post-promotion-activity",
   "qa:settlement-certification",
   "qa:settlement-authority-dry-run",
+  "qa:ledger-authority",
+  "qa:ledger-shadow-analysis",
+  "qa:ledger-lifecycle",
+  "qa:ledger-promotion-decision",
+  "qa:ledger-dry-run",
+  "qa:ledger-promotion-simulation",
   "qa:credit-launch",
   "qa:worker-observability",
 ];
