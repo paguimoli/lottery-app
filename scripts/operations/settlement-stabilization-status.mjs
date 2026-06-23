@@ -53,6 +53,8 @@ console.log(
       rollbackTrigger: status.rollbackTrigger,
       stabilizationStatus: status.stabilizationStatus,
       certificationStatus: status.certificationStatus,
+      certificationApprovalId: status.certificationApprovalId,
+      certifiedAt: status.certifiedAt,
       certificationBlockers: status.certificationBlockers,
       certificationWarnings: status.certificationWarnings,
       recommendation: status.recommendation,

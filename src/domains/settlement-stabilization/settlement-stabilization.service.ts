@@ -1,5 +1,10 @@
+import { createAuthorityApprovalRecord, findAuthorityApprovalRecordByCorrelationId, listAuthorityApprovalRecords } from "../authority-approval/authority-approval.repository";
+import type { AuthorityApprovalRecord } from "../authority-approval/authority-approval.types";
+import { createOutboxEvent } from "../outbox/outbox.service";
 import { getSettlementPostPromotionStatus } from "../promotion-execution/promotion-execution.service";
 import type {
+  SettlementCertificationInput,
+  SettlementCertificationResult,
   SettlementCertificationStatus,
   SettlementStabilizationMetrics,
   SettlementStabilizationStatus,
@@ -23,6 +28,33 @@ const WINDOW_HOURS: Record<Exclude<SettlementStabilizationWindow, "all">, number
   "7d": 24 * 7,
   "30d": 24 * 30,
 };
+
+function latestSettlementCertificationApproval(
+  approvals: AuthorityApprovalRecord[]
+) {
+  return (
+    approvals.find(
+      (approval) => approval.approvalType === "SETTLEMENT_CERTIFICATION"
+    ) ?? null
+  );
+}
+
+function normalizeJustification(value: unknown) {
+  return typeof value === "string" ? value.trim() : "";
+}
+
+function normalizeAcknowledgedWarnings(value: unknown) {
+  if (!Array.isArray(value)) return [];
+
+  return value
+    .filter((warning): warning is string => typeof warning === "string")
+    .map((warning) => warning.trim())
+    .filter(Boolean);
+}
+
+function normalizeCorrelationId(value: unknown) {
+  return typeof value === "string" && value.trim() ? value.trim() : null;
+}
 
 export function parseSettlementStabilizationWindow(
   value: string | null | undefined
@@ -141,6 +173,7 @@ function getCertificationState({
   mismatchCount,
   failureCount,
   criticalMismatchCount,
+  existingCertification,
 }: {
   authority: string;
   comparisonMode: string;
@@ -150,6 +183,7 @@ function getCertificationState({
   mismatchCount: number;
   failureCount: number;
   criticalMismatchCount: number;
+  existingCertification: AuthorityApprovalRecord | null;
 }): {
   certificationStatus: SettlementCertificationStatus;
   certificationBlockers: string[];
@@ -157,6 +191,14 @@ function getCertificationState({
 } {
   const certificationBlockers: string[] = [];
   const certificationWarnings: string[] = [];
+
+  if (existingCertification) {
+    return {
+      certificationStatus: "CERTIFIED",
+      certificationBlockers,
+      certificationWarnings,
+    };
+  }
 
   if (authority !== "SERVICE") {
     certificationBlockers.push("Settlement authority must be SERVICE.");
@@ -215,7 +257,11 @@ export async function getSettlementStabilizationStatus({
   window?: SettlementStabilizationWindow;
 } = {}): Promise<SettlementStabilizationSummary> {
   const generatedAt = new Date().toISOString();
-  const postPromotionStatus = await getSettlementPostPromotionStatus();
+  const [postPromotionStatus, approvals] = await Promise.all([
+    getSettlementPostPromotionStatus(),
+    listAuthorityApprovalRecords({ authorityCandidate: "SETTLEMENT" }),
+  ]);
+  const certificationApproval = latestSettlementCertificationApproval(approvals);
   const windowStart = getWindowStart(window, generatedAt);
   const evidenceFrom = maxIso(postPromotionStatus.promotedAt, windowStart);
   const evidence = await getSettlementStabilizationEvidence({
@@ -248,6 +294,7 @@ export async function getSettlementStabilizationStatus({
     mismatchCount: metrics.mismatchCount,
     failureCount: metrics.failureCount,
     criticalMismatchCount: metrics.criticalMismatchCount,
+    existingCertification: certificationApproval,
   });
 
   return {
@@ -270,6 +317,8 @@ export async function getSettlementStabilizationStatus({
     certificationStatus: certification.certificationStatus,
     certificationBlockers: certification.certificationBlockers,
     certificationWarnings: certification.certificationWarnings,
+    certificationApprovalId: certificationApproval?.id ?? null,
+    certifiedAt: certificationApproval?.createdAt ?? null,
     recommendation: getRecommendation(stabilizationStatus),
     generatedAt,
     evidence: {
@@ -281,5 +330,139 @@ export async function getSettlementStabilizationStatus({
       postPromotionEvidenceSummary:
         postPromotionStatus.postPromotionEvidenceSummary,
     },
+  };
+}
+
+export async function certifySettlementAuthority({
+  actor,
+  justification,
+  acknowledgedWarnings,
+  correlationId,
+}: SettlementCertificationInput): Promise<SettlementCertificationResult> {
+  const normalizedCorrelationId = normalizeCorrelationId(correlationId);
+
+  if (normalizedCorrelationId) {
+    const existingApproval = await findAuthorityApprovalRecordByCorrelationId({
+      authorityCandidate: "SETTLEMENT",
+      approvalType: "SETTLEMENT_CERTIFICATION",
+      correlationId: normalizedCorrelationId,
+    });
+
+    if (existingApproval) {
+      const stabilization = await getSettlementStabilizationStatus({
+        window: "7d",
+      });
+
+      return {
+        approval: existingApproval,
+        idempotent: true,
+        stabilizationBefore: stabilization,
+        stabilizationAfter: stabilization,
+      };
+    }
+  }
+
+  const normalizedJustification = normalizeJustification(justification);
+  if (!normalizedJustification) {
+    throw new SettlementStabilizationValidationError(
+      "Justification is required."
+    );
+  }
+
+  const normalizedAcknowledgedWarnings =
+    normalizeAcknowledgedWarnings(acknowledgedWarnings);
+  const stabilizationBefore = await getSettlementStabilizationStatus({
+    window: "7d",
+  });
+  const missingWarnings = stabilizationBefore.certificationWarnings.filter(
+    (warning) => !normalizedAcknowledgedWarnings.includes(warning)
+  );
+
+  if (missingWarnings.length > 0) {
+    throw new SettlementStabilizationValidationError(
+      "Certification warnings must be acknowledged before certification."
+    );
+  }
+  if (stabilizationBefore.certificationStatus !== "READY_FOR_CERTIFICATION") {
+    throw new SettlementStabilizationValidationError(
+      "Settlement is not ready for certification.",
+      409
+    );
+  }
+  if (stabilizationBefore.authority !== "SERVICE") {
+    throw new SettlementStabilizationValidationError(
+      "Settlement authority must be SERVICE before certification.",
+      409
+    );
+  }
+  if (stabilizationBefore.comparisonMode !== "ENABLED") {
+    throw new SettlementStabilizationValidationError(
+      "Settlement comparison mode must be ENABLED before certification.",
+      409
+    );
+  }
+  if (stabilizationBefore.rollbackReadiness !== "READY") {
+    throw new SettlementStabilizationValidationError(
+      "Rollback readiness must be READY before certification.",
+      409
+    );
+  }
+  if (!stabilizationBefore.serviceHealth.available) {
+    throw new SettlementStabilizationValidationError(
+      "Settlement Service health must be healthy before certification.",
+      409
+    );
+  }
+  if (
+    stabilizationBefore.failureCount !== 0 ||
+    stabilizationBefore.criticalMismatchCount !== 0
+  ) {
+    throw new SettlementStabilizationValidationError(
+      "Post-promotion failures and critical mismatches must be zero before certification.",
+      409
+    );
+  }
+
+  const approval = await createAuthorityApprovalRecord({
+    authorityCandidate: "SETTLEMENT",
+    approvalType: "SETTLEMENT_CERTIFICATION",
+    approverUserId: actor.id,
+    approverUsername: actor.username,
+    justification: normalizedJustification,
+    metadata: {
+      acknowledgedWarnings: normalizedAcknowledgedWarnings,
+      certificationCapturedAt: new Date().toISOString(),
+      correlationId: normalizedCorrelationId,
+      stabilizationStatusBefore: stabilizationBefore.stabilizationStatus,
+      certificationStatusBefore: stabilizationBefore.certificationStatus,
+      settlementsProcessed: stabilizationBefore.settlementsProcessed,
+      mismatchCount: stabilizationBefore.mismatchCount,
+      failureCount: stabilizationBefore.failureCount,
+      criticalMismatchCount: stabilizationBefore.criticalMismatchCount,
+    },
+  });
+
+  await createOutboxEvent({
+    eventType: "authority.settlement.certified",
+    aggregateType: "authority_candidate",
+    aggregateId: "SETTLEMENT",
+    correlationId: normalizedCorrelationId,
+    payload: {
+      approvalId: approval.id,
+      actorUserId: actor.id,
+      correlationId: normalizedCorrelationId,
+      certifiedAt: approval.createdAt,
+    },
+  });
+
+  const stabilizationAfter = await getSettlementStabilizationStatus({
+    window: "7d",
+  });
+
+  return {
+    approval,
+    idempotent: false,
+    stabilizationBefore,
+    stabilizationAfter,
   };
 }

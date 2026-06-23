@@ -2,6 +2,8 @@ import type {
   RollbackReadinessStatus,
   ServiceHealthStatus,
 } from "../authority-control/authority-control.types";
+import type { AuthorityApprovalRecord } from "../authority-approval/authority-approval.types";
+import type { AuthenticatedUser } from "../auth/auth-context.types";
 import type {
   RollbackTriggerEvidenceSummary,
   SettlementPostPromotionStatus,
@@ -47,6 +49,8 @@ export type SettlementStabilizationSummary = {
   certificationStatus: SettlementCertificationStatus;
   certificationBlockers: string[];
   certificationWarnings: string[];
+  certificationApprovalId: string | null;
+  certifiedAt: string | null;
   recommendation: string;
   generatedAt: string;
   evidence: {
@@ -57,4 +61,18 @@ export type SettlementStabilizationSummary = {
     promotionEvidenceSummary: RollbackTriggerEvidenceSummary;
     postPromotionEvidenceSummary: RollbackTriggerEvidenceSummary;
   };
+};
+
+export type SettlementCertificationInput = {
+  actor: AuthenticatedUser;
+  justification: unknown;
+  acknowledgedWarnings: unknown;
+  correlationId?: unknown;
+};
+
+export type SettlementCertificationResult = {
+  approval: AuthorityApprovalRecord;
+  idempotent: boolean;
+  stabilizationBefore: SettlementStabilizationSummary;
+  stabilizationAfter: SettlementStabilizationSummary;
 };

@@ -107,6 +107,8 @@ assert(
 pass("Settlement stabilization status generated.", {
   stabilizationStatus: status.stabilizationStatus,
   certificationStatus: status.certificationStatus,
+  certificationApprovalId: status.certificationApprovalId,
+  certifiedAt: status.certifiedAt,
   recommendation: status.recommendation,
   metrics: {
     settlementsProcessed: status.settlementsProcessed,

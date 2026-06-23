@@ -49,6 +49,8 @@ console.log(
       failureCount: status.failureCount,
       criticalMismatchCount: status.criticalMismatchCount,
       certificationStatus: status.certificationStatus,
+      certificationApprovalId: status.certificationApprovalId,
+      certifiedAt: status.certifiedAt,
       certificationBlockers: status.certificationBlockers,
       certificationWarnings: status.certificationWarnings,
       recommendation: status.recommendation,

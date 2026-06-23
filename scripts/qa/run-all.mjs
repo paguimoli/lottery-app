@@ -19,6 +19,7 @@ const steps = [
   "qa:rollback-trigger-alignment",
   "qa:settlement-stabilization",
   "qa:settlement-post-promotion-activity",
+  "qa:settlement-certification",
   "qa:settlement-authority-dry-run",
   "qa:credit-launch",
   "qa:worker-observability",

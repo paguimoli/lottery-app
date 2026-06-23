@@ -1,8 +1,49 @@
 import "./load-session-env.mjs";
 
-const appUrl = process.env.QA_APP_URL || "http://localhost:3000";
+import { existsSync } from "node:fs";
+
+function detectRuntimeContext() {
+  if (process.env.QA_RUNTIME_CONTEXT === "docker" || process.env.QA_RUNTIME_CONTEXT === "host") {
+    return process.env.QA_RUNTIME_CONTEXT;
+  }
+
+  return existsSync("/.dockerenv") ? "docker" : "host";
+}
+
+function defaultAppUrl(runtimeContext) {
+  return runtimeContext === "docker" ? "http://app:3000" : "http://localhost:3000";
+}
+
+function defaultSettlementServiceUrl(runtimeContext) {
+  return runtimeContext === "docker"
+    ? "http://settlement-service:8080"
+    : "http://localhost:5400";
+}
+
+function fetchFailureMetadata(error, targetName, selectedUrl) {
+  let hostname = null;
+
+  try {
+    hostname = new URL(selectedUrl).hostname;
+  } catch {
+    hostname = null;
+  }
+
+  return {
+    targetName,
+    selectedUrl,
+    runtimeContext,
+    errorName: error?.name ?? null,
+    errorMessage: error?.message ?? null,
+    errorCode: error?.cause?.code ?? error?.code ?? null,
+    hostname: error?.cause?.hostname ?? hostname,
+  };
+}
+
+const runtimeContext = detectRuntimeContext();
+const appUrl = process.env.QA_APP_URL || defaultAppUrl(runtimeContext);
 const settlementServiceUrl =
-  process.env.QA_SETTLEMENT_SERVICE_URL || "http://host.docker.internal:5400";
+  process.env.QA_SETTLEMENT_SERVICE_URL || defaultSettlementServiceUrl(runtimeContext);
 const sessionToken = process.env.QA_ADMIN_SESSION_TOKEN;
 
 function fail(message, metadata = {}) {
@@ -19,7 +60,9 @@ function assert(condition, message, metadata = {}) {
 }
 
 async function requestJson(url, options = {}) {
-  const response = await fetch(url, options);
+  const response = await fetch(url, options).catch((error) => {
+    fail("QA HTTP request failed.", fetchFailureMetadata(error, options.targetName ?? "unknown", url));
+  });
   const text = await response.text();
   const body = text ? JSON.parse(text) : null;
 
@@ -39,6 +82,7 @@ function authHeaders(extra = {}) {
 
 async function getAuthorityStatus() {
   const result = await requestJson(`${appUrl}/api/authority/status`, {
+    targetName: "app",
     headers: authHeaders(),
   });
 
@@ -54,6 +98,7 @@ async function getStabilizationStatus() {
   const result = await requestJson(
     `${appUrl}/api/authority/settlement-stabilization-status?window=7d`,
     {
+      targetName: "app",
       headers: authHeaders(),
     }
   );
@@ -94,6 +139,7 @@ async function executeSettlementServiceMatch(correlationId) {
   const result = await requestJson(
     `${settlementServiceUrl}/v1/settlement/shadow/execute`,
     {
+      targetName: "settlement-service",
       method: "POST",
       headers: {
         "content-type": "application/json",
@@ -189,8 +235,8 @@ assert(
   { before, after }
 );
 assert(
-  after.certificationStatus === "READY_FOR_CERTIFICATION",
-  "Settlement should be ready for operator certification.",
+  ["READY_FOR_CERTIFICATION", "CERTIFIED"].includes(after.certificationStatus),
+  "Settlement should remain ready or certified after activity.",
   { before, after }
 );
 pass("Settlement post-promotion activity certification QA completed.", {

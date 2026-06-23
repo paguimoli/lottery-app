@@ -175,6 +175,33 @@ Certification statuses:
 
 Do not mark Settlement as certified automatically. Certification requires a future explicit operator action.
 
+## Operator Certification Capture
+
+Run:
+
+```bash
+npm run ops:certify-settlement -- \
+  --justification "Operator reviewed stabilization evidence and certifies Settlement Service." \
+  --acknowledge-warning "Operator certification is still required before marking Settlement as CERTIFIED."
+```
+
+Then confirm:
+
+```bash
+npm run ops:settlement-certification-status -- --window 7d
+```
+
+Expected:
+
+- certification status is `CERTIFIED`
+- certification approval id is present
+- certified timestamp is present
+- Settlement authority remains `SERVICE`
+- comparison mode remains `ENABLED`
+- rollback readiness remains `READY`
+
+Certification is append-only. Do not update or delete certification history.
+
 ## Rollback Simulation
 
 Run:
@@ -226,8 +253,9 @@ The rollback drill is simulation-only. It must not change authority.
 12. Run rollback trigger analysis.
 13. Run stabilization status.
 14. Generate post-promotion activity certification evidence.
-15. Verify post-promotion QA.
-16. Record results in the release evidence package.
+15. Capture operator certification when prerequisites are met.
+16. Verify post-promotion QA.
+17. Record results in the release evidence package.
 
 ## Emergency Rollback Procedure
 

@@ -16,7 +16,8 @@ export type AuthorityPromotionCandidateState =
 export type AuthorityApprovalType =
   | "DRY_RUN_APPROVAL"
   | "PROMOTION_APPROVAL"
-  | "ROLLBACK_APPROVAL";
+  | "ROLLBACK_APPROVAL"
+  | "SETTLEMENT_CERTIFICATION";
 
 export type AuthorityApprovalRecord = {
   id: string;
