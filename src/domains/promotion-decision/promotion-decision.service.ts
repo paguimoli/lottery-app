@@ -4,6 +4,7 @@ import type {
   AuthorityApprovalRecord,
   AuthorityApprovalType,
 } from "../authority-approval/authority-approval.types";
+import { getCreditAuthorityReadiness } from "../credit-authority/credit-authority.service";
 import { getLedgerAuthorityReadiness } from "../ledger-authority/ledger-authority.service";
 import { getSettlementAuthorityReadiness } from "../settlement-authority/settlement-authority.service";
 import {
@@ -125,46 +126,8 @@ export async function getPromotionDecision({
 }: {
   domain?: AuthorityDomain;
 } = {}): Promise<PromotionDecision> {
-  if (domain === "CREDIT") {
-    return {
-      domain,
-      decision: "BLOCKED",
-      currentAuthority: "MONOLITH",
-      comparisonMode: "ENABLED",
-      dryRunMode: "DISABLED",
-      rawReadiness: {
-        readiness: "BLOCKED",
-        mismatchRate: 0,
-        failureRate: 0,
-        criticalMismatchCount: 0,
-      },
-      adjustedReadiness: {
-        readiness: "BLOCKED",
-        mismatchRate: 0,
-        failureRate: 0,
-        criticalMismatchCount: 0,
-      },
-      promotionReadiness: {
-        readiness: "BLOCKED",
-        mismatchRate: 0,
-        failureRate: 0,
-        criticalMismatchCount: 0,
-      },
-      rollbackReadiness: "BLOCKED",
-      approvalState: {
-        dryRunApproval: null,
-        promotionApproval: null,
-        rollbackApproval: null,
-        approvalHistoryCount: 0,
-      },
-      blockingReasons: [`${domain} promotion decisions are not implemented yet.`],
-      warnings: [],
-      recommendation: "Implement domain-specific promotion inputs before review.",
-      evaluatedAt: new Date().toISOString(),
-    };
-  }
-
   const isLedger = domain === "LEDGER";
+  const isCredit = domain === "CREDIT";
   const [
     authorityReadiness,
     rollbackReadiness,
@@ -173,7 +136,11 @@ export async function getPromotionDecision({
     mismatches,
     failures,
   ] = await Promise.all([
-    isLedger ? getLedgerAuthorityReadiness() : getSettlementAuthorityReadiness(),
+    isCredit
+      ? getCreditAuthorityReadiness()
+      : isLedger
+        ? getLedgerAuthorityReadiness()
+        : getSettlementAuthorityReadiness(),
     validateRollbackReadiness(),
     getShadowAnalysisSummary("all"),
     listPromotionApprovalRecords(domain),
@@ -183,7 +150,9 @@ export async function getPromotionDecision({
   const dryRunApproval = latestApproval(approvals, "DRY_RUN_APPROVAL");
   const promotionApproval = latestApproval(approvals, "PROMOTION_APPROVAL");
   const rollbackApproval = latestApproval(approvals, "ROLLBACK_APPROVAL");
-  const domainEvidence = isLedger
+  const domainEvidence = isCredit
+    ? shadowAnalysis.domains.credit
+    : isLedger
     ? shadowAnalysis.domains.ledger
     : shadowAnalysis.domains.settlement;
   const promotionMismatches = mismatches.filter(
@@ -202,9 +171,13 @@ export async function getPromotionDecision({
   const unexplainedFailures = promotionFailures.filter(isUnexplainedFailure);
   const blockingReasons: string[] = [];
   const warnings: string[] = [];
-  const domainRollback = isLedger ? rollbackReadiness.ledger : rollbackReadiness.settlement;
+  const domainRollback = isCredit
+    ? rollbackReadiness.credit
+    : isLedger
+      ? rollbackReadiness.ledger
+      : rollbackReadiness.settlement;
   const serviceHealth = domainRollback.serviceHealth;
-  const label = isLedger ? "Ledger" : "Settlement";
+  const label = isCredit ? "Credit" : isLedger ? "Ledger" : "Settlement";
 
   if (domainEvidence.promotionReadiness.readinessStatus !== "READY") {
     blockingReasons.push(

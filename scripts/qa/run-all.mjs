@@ -33,6 +33,12 @@ const steps = [
   "qa:ledger-post-promotion",
   "qa:ledger-post-promotion-activity",
   "qa:ledger-certification",
+  "qa:credit-authority",
+  "qa:credit-shadow-analysis",
+  "qa:credit-lifecycle",
+  "qa:credit-promotion-decision",
+  "qa:credit-dry-run",
+  "qa:credit-promotion-simulation",
   "qa:credit-launch",
   "qa:worker-observability",
 ];
