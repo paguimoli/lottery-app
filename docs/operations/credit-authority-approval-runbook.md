@@ -8,7 +8,7 @@ Credit approval workflows are append-only and auditable. They do not change auth
 
 ## Current Phase
 
-Phase 17.2 supports Credit dry-run approval and promotion approval capture. Credit remains `MONOLITH`.
+Phase 17.3 supports Credit dry-run approval, promotion approval, and explicit controlled promotion execution.
 
 ## Preconditions
 
@@ -31,12 +31,25 @@ Before recording Credit promotion approval, also confirm:
 - Credit rollback readiness is still `READY`.
 - Current warnings have been reviewed and acknowledged.
 
+Before executing controlled promotion, confirm:
+
+- Credit `DRY_RUN_APPROVAL` exists.
+- Credit `PROMOTION_APPROVAL` exists.
+- Credit promotion decision is `READY_FOR_CONTROLLED_PROMOTION`.
+- Credit authority is still `MONOLITH`.
+- Credit comparison mode is still `ENABLED`.
+- Credit rollback readiness is still `READY`.
+- Credit Wallet Service health is healthy.
+- Settlement remains `SERVICE` and `CERTIFIED`.
+- Ledger remains `SERVICE` and `CERTIFIED`.
+
 ## Review Commands
 
 ```bash
 npm run ops:credit-authority-readiness
 npm run ops:credit-promotion-decision
 npm run ops:credit-dry-run-evaluation
+npm run ops:credit-promotion-status
 ```
 
 ## Dry-Run Approval Command
@@ -94,6 +107,46 @@ Promotion approval does not:
 - change wallet calculations, balances, credit limits, reservations, exposure, Settlement logic, or Ledger logic;
 - disable comparison mode or rollback.
 
+## Controlled Promotion Command
+
+```bash
+npm run ops:credit-promote -- \
+  --justification "Reviewed Credit controlled promotion checklist and approvals." \
+  --correlation-id "change-credit-promotion-001"
+```
+
+Controlled promotion:
+
+- requires `domain: CREDIT` and explicit `mode: EXECUTE`;
+- requires non-empty justification;
+- requires `DRY_RUN_APPROVAL` and `PROMOTION_APPROVAL`;
+- changes Credit authority from `MONOLITH` to `SERVICE`;
+- keeps Credit comparison mode `ENABLED`;
+- keeps Settlement and Ledger authorities unchanged;
+- emits `authority.credit.promoted` through the outbox.
+
+It does not change wallet calculations, balances, credit limits, reservations, exposure, settlement logic, Ledger logic, or accounting behavior.
+
+## Config Behavior
+
+The protected API updates the runtime authority configuration through the same controlled authority mechanism used by Settlement and Ledger.
+
+The operation script also updates only these local `.env.local` keys after successful execution:
+
+- `CREDIT_AUTHORITY=SERVICE`
+- `CREDIT_COMPARISON_MODE=ENABLED`
+
+`.env.local` is gitignored. Do not edit unrelated environment values as part of Credit promotion.
+
+## Rollback Sequence
+
+Phase 17.3 keeps rollback readiness available but does not execute rollback. Operators should:
+
+- confirm `npm run ops:credit-promotion-status` reports Credit `SERVICE` and rollback `READY`;
+- run `npm run ops:simulate-credit-rollback` before any rollback window;
+- keep comparison mode enabled;
+- follow the Credit rollback execution runbook when that execution phase is available.
+
 ## Required Acknowledgements
 
 Operators must acknowledge every current warning returned by:
@@ -112,6 +165,8 @@ Approvals are append-only. The approval API checks `correlationId` before creati
 - retry with the same `correlationId` returns the existing approval;
 - no update or delete path exists.
 
+Promotion execution is also idempotent. If Credit is already `SERVICE`, retrying the execution command returns the existing promoted state and does not emit another `authority.credit.promoted` event.
+
 ## Verification
 
 Run:
@@ -119,18 +174,23 @@ Run:
 ```bash
 npm run qa:credit-dry-run-approval
 npm run qa:credit-promotion-approval
+npm run qa:credit-promotion-execution
 npm run qa:credit-promotion-decision
 ```
 
 Expected:
 
-- Credit remains `MONOLITH`;
+- Credit is `MONOLITH` before controlled promotion and `SERVICE` after successful execution;
 - comparison remains `ENABLED`;
 - rollback remains `READY`;
-- decision is `READY_FOR_CONTROLLED_PROMOTION` after promotion approval;
+- decision is `READY_FOR_CONTROLLED_PROMOTION` after promotion approval and `PROMOTED` after execution;
 - Settlement remains `SERVICE` and `CERTIFIED`;
 - Ledger remains `SERVICE` and `CERTIFIED`.
 
+## Post-Promotion Monitoring
+
+After controlled promotion, operators should continue monitoring Credit comparison and rollback signals. Intentional QA evidence must remain visible in lifecycle reports, and post-promotion evidence should be reviewed before any future Credit certification phase.
+
 ## Next Phase
 
-After promotion approval, Phase 17.3 should prepare the controlled promotion step. Authority transfer must remain explicit, auditable, and separate from approval capture.
+After controlled promotion, Phase 17.4 should validate post-promotion Credit activity and rollback evidence while Credit Service remains authoritative.

@@ -119,3 +119,31 @@ export type CreditSimulationResult = {
   };
   simulatedAt: string;
 };
+
+export type CreditAuthorityPromotion = {
+  domain: "CREDIT";
+  previousAuthority: AuthorityValue;
+  newAuthority: "SERVICE";
+  comparisonMode: "ENABLED";
+  rollbackReadiness: DomainReadinessStatus;
+  promotionApprovalId: string | null;
+  promotedAt: string;
+  correlationId: string | null;
+  idempotent: boolean;
+  auditEvent: {
+    id: string;
+    eventType: string;
+    correlationId: string | null;
+  } | null;
+};
+
+export type CreditPromotionStatus = {
+  domain: "CREDIT";
+  authority: AuthorityValue;
+  comparisonMode: ComparisonMode;
+  promotedAt: string | null;
+  rollbackReady: boolean;
+  rollbackReadiness: DomainReadinessStatus;
+  promotionApprovalId: string | null;
+  evaluatedAt: string;
+};

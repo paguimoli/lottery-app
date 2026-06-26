@@ -60,8 +60,16 @@ assert(authorityResult.response.status === 200 && authorityResult.body.success, 
 
 const readiness = readinessResult.body.readiness;
 const authority = authorityResult.body.authority;
-assert(readiness.authority === "MONOLITH", "Credit must remain MONOLITH.", {
+assert(
+  readiness.authority === "MONOLITH" || readiness.authority === "SERVICE",
+  "Credit authority should be a supported lifecycle state.",
+  {
+    readiness,
+  }
+);
+assert(authority.credit.authority === readiness.authority, "Credit authority status mismatch.", {
   readiness,
+  authority,
 });
 assert(readiness.comparisonMode === "ENABLED", "Credit comparison must remain ENABLED.", {
   readiness,
@@ -69,13 +77,28 @@ assert(readiness.comparisonMode === "ENABLED", "Credit comparison must remain EN
 assert(readiness.rollbackReadinessStatus === "READY", "Credit rollback readiness must be READY.", {
   readiness,
 });
-assert(
-  readiness.runtimeRoute.productionCutoverActive === false,
-  "Credit production cutover must remain inactive.",
-  { readiness }
-);
-assert(readiness.runtimeRoute.comparisonPath === "CREDIT_SERVICE", "Credit comparison path mismatch.", {
+if (readiness.authority === "MONOLITH") {
+  assert(
+    readiness.runtimeRoute.productionCutoverActive === false,
+    "Credit production cutover must remain inactive before promotion.",
+    { readiness }
+  );
+  assert(readiness.runtimeRoute.comparisonPath === "CREDIT_SERVICE", "Credit comparison path mismatch.", {
+    readiness,
+  });
+} else {
+  assert(
+    readiness.runtimeRoute.productionCutoverActive === true,
+    "Credit production cutover should be active after promotion.",
+    { readiness }
+  );
+  assert(readiness.runtimeRoute.comparisonPath === "MONOLITH", "Credit comparison path mismatch after promotion.", {
+    readiness,
+  });
+}
+assert(authority.credit.comparisonMode === "ENABLED", "Credit comparison status changed.", {
   readiness,
+  authority,
 });
 assert(rollbackResult.body.rollbackReadiness.rollbackStatus === "READY", "Credit rollback endpoint should report READY.", {
   rollbackReadiness: rollbackResult.body.rollbackReadiness,
@@ -84,9 +107,6 @@ assert(authority.settlement.authority === "SERVICE", "Settlement authority chang
   authority,
 });
 assert(authority.ledger.authority === "SERVICE", "Ledger authority changed.", {
-  authority,
-});
-assert(authority.credit.authority === "MONOLITH", "Credit authority changed.", {
   authority,
 });
 

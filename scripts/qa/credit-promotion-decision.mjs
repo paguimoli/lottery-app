@@ -42,16 +42,19 @@ assert(result.response.status === 200 && result.body.success, "Credit promotion 
 const decision = result.body.decision;
 
 assert(decision.domain === "CREDIT", "Credit promotion decision domain mismatch.", { decision });
-assert(decision.currentAuthority === "MONOLITH", "Credit authority must remain MONOLITH.", {
-  decision,
-});
+assert(
+  decision.currentAuthority === "MONOLITH" || decision.currentAuthority === "SERVICE",
+  "Credit authority should be a supported lifecycle state.",
+  { decision }
+);
 assert(decision.comparisonMode === "ENABLED", "Credit comparison must remain ENABLED.", {
   decision,
 });
 assert(
-  decision.decision === "READY_FOR_DRY_RUN_APPROVAL" ||
+    decision.decision === "READY_FOR_DRY_RUN_APPROVAL" ||
     decision.decision === "READY_FOR_PROMOTION_APPROVAL" ||
-    decision.decision === "READY_FOR_CONTROLLED_PROMOTION",
+    decision.decision === "READY_FOR_CONTROLLED_PROMOTION" ||
+    decision.decision === "PROMOTED",
   "Credit decision should be ready for the next operator step.",
   { decision }
 );

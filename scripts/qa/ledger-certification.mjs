@@ -138,9 +138,11 @@ assert(
   "Settlement must remain SERVICE and CERTIFIED.",
   { settlementBefore }
 );
-assert(authorityBefore.credit.authority === "MONOLITH", "Credit must remain MONOLITH.", {
-  authorityBefore,
-});
+assert(
+  authorityBefore.credit.authority === "MONOLITH" || authorityBefore.credit.authority === "SERVICE",
+  "Credit authority has an unsupported value.",
+  { authorityBefore }
+);
 
 const approval = await certify({
   justification:
@@ -211,9 +213,11 @@ assert(
   "Certification changed Settlement state.",
   { settlementAfter }
 );
-assert(authorityAfter.credit.authority === "MONOLITH", "Certification changed Credit.", {
-  authorityAfter,
-});
+assert(
+  authorityAfter.credit.authority === "MONOLITH" || authorityAfter.credit.authority === "SERVICE",
+  "Credit authority has an unsupported value after certification.",
+  { authorityAfter }
+);
 pass("Ledger certification QA completed.", {
   before: before.certificationStatus,
   after: after.certificationStatus,

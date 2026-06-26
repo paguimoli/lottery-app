@@ -123,9 +123,11 @@ assert(
   "Ledger authority has an unsupported value.",
   { authority }
 );
-assert(authority.credit.authority === "MONOLITH", "Credit authority changed.", {
-  authority,
-});
+assert(
+  authority.credit.authority === "MONOLITH" || authority.credit.authority === "SERVICE",
+  "Credit authority has an unsupported value.",
+  { authority }
+);
 assert(
   authority.settlement.comparisonMode === "ENABLED",
   "Settlement comparison mode changed.",

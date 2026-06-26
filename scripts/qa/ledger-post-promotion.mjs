@@ -94,9 +94,11 @@ assert(
   "Ledger comparison mode must remain ENABLED.",
   { authority }
 );
-assert(authority.credit.authority === "MONOLITH", "Credit authority changed.", {
-  authority,
-});
+assert(
+  authority.credit.authority === "MONOLITH" || authority.credit.authority === "SERVICE",
+  "Credit authority has an unsupported value.",
+  { authority }
+);
 pass("Authority state is Ledger post-promotion safe.", {
   settlement: authority.settlement.authority,
   ledger: authority.ledger.authority,
@@ -214,10 +216,12 @@ assert(
   { status: authorityAfter.response.status, body: authorityAfter.body }
 );
 assert(
-  authorityAfter.body.authority.settlement.authority === "SERVICE" &&
+    authorityAfter.body.authority.settlement.authority === "SERVICE" &&
     authorityAfter.body.authority.ledger.authority === "SERVICE" &&
     authorityAfter.body.authority.ledger.comparisonMode === "ENABLED" &&
-    authorityAfter.body.authority.credit.authority === "MONOLITH",
+    (authorityAfter.body.authority.credit.authority === "MONOLITH" ||
+      authorityAfter.body.authority.credit.authority === "SERVICE") &&
+    authorityAfter.body.authority.credit.comparisonMode === "ENABLED",
   "Ledger rollback drill changed authority controls.",
   { authority: authorityAfter.body.authority }
 );

@@ -41,6 +41,7 @@ const steps = [
   "qa:credit-promotion-approval",
   "qa:credit-dry-run",
   "qa:credit-promotion-simulation",
+  "qa:credit-promotion-execution",
   "qa:credit-launch",
   "qa:worker-observability",
 ];

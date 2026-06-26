@@ -58,9 +58,11 @@ assert(
   "Ledger authority has an unsupported value.",
   { config: authority.ledger }
 );
-assert(authority.credit.authority === "MONOLITH", "Credit authority changed.", {
-  config: authority.credit,
-});
+assert(
+  authority.credit.authority === "MONOLITH" || authority.credit.authority === "SERVICE",
+  "Credit authority has an unsupported value.",
+  { config: authority.credit }
+);
 for (const domain of ["settlement", "ledger", "credit"]) {
   assert(
     authority[domain].comparisonMode === "ENABLED",

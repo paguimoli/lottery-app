@@ -207,9 +207,11 @@ assert(
 assert(authority.settlement.authority === "SERVICE", "Settlement must remain SERVICE.", {
   authority,
 });
-assert(authority.credit.authority === "MONOLITH", "Credit authority changed.", {
-  authority,
-});
+assert(
+  authority.credit.authority === "MONOLITH" || authority.credit.authority === "SERVICE",
+  "Credit authority has an unsupported value.",
+  { authority }
+);
 
 const settlement = await getSettlementStabilizationStatus();
 assert(
@@ -276,10 +278,12 @@ assert(
 
 const finalAuthority = await getAuthorityStatus();
 assert(
-  finalAuthority.settlement.authority === "SERVICE" &&
+    finalAuthority.settlement.authority === "SERVICE" &&
     finalAuthority.ledger.authority === "SERVICE" &&
     finalAuthority.ledger.comparisonMode === "ENABLED" &&
-    finalAuthority.credit.authority === "MONOLITH",
+    (finalAuthority.credit.authority === "MONOLITH" ||
+      finalAuthority.credit.authority === "SERVICE") &&
+    finalAuthority.credit.comparisonMode === "ENABLED",
   "Ledger post-promotion activity changed authority controls.",
   { authority: finalAuthority }
 );

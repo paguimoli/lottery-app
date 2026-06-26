@@ -2,7 +2,9 @@ import {
   getAuthorityStatus,
   validateRollbackReadiness,
 } from "../authority-control/authority-control.service";
-import { createOutboxEvent } from "../outbox/outbox.service";
+import { setRuntimeAuthorityDomainConfiguration } from "../authority-control/authority-control.repository";
+import type { AuthenticatedUser } from "../auth/auth-context.types";
+import { createOutboxEvent, listRecentOutboxEvents } from "../outbox/outbox.service";
 import { getPromotionDecision } from "../promotion-decision/promotion-decision.service";
 import {
   getShadowAnalysisSummary,
@@ -21,10 +23,22 @@ import type {
   CreditAuthorityMetrics,
   CreditAuthorityReadiness,
   CreditAuthorityRuntimeRoute,
+  CreditAuthorityPromotion,
   CreditDryRunEvaluation,
+  CreditPromotionStatus,
   CreditRollbackTriggerEvaluation,
   CreditSimulationResult,
 } from "./credit-authority.types";
+
+export class CreditAuthorityValidationError extends Error {
+  readonly status: number;
+
+  constructor(message: string, status = 400) {
+    super(message);
+    this.name = "CreditAuthorityValidationError";
+    this.status = status;
+  }
+}
 
 function nowIso() {
   return new Date().toISOString();
@@ -79,6 +93,39 @@ function collectBlockers(
 
 function normalizeCorrelationId(value: unknown) {
   return typeof value === "string" && value.trim() ? value.trim() : null;
+}
+
+function normalizeJustification(value: unknown) {
+  return typeof value === "string" ? value.trim() : "";
+}
+
+function getPromotionMetadata() {
+  return {
+    promotedAt: process.env.CREDIT_PROMOTED_AT || null,
+    promotionApprovalId: process.env.CREDIT_PROMOTION_APPROVAL_ID || null,
+  };
+}
+
+async function getLatestPromotionEventMetadata() {
+  const events = await listRecentOutboxEvents({ limit: 10000 });
+  const promotionEvent = events.find(
+    (event) =>
+      event.eventType === "authority.credit.promoted" &&
+      event.aggregateType === "authority_candidate" &&
+      event.aggregateId === "CREDIT"
+  );
+  const payload = promotionEvent?.payload ?? {};
+
+  return {
+    promotedAt:
+      typeof payload.promotedAt === "string"
+        ? payload.promotedAt
+        : promotionEvent?.createdAt ?? null,
+    promotionApprovalId:
+      typeof payload.promotionApprovalId === "string"
+        ? payload.promotionApprovalId
+        : null,
+  };
 }
 
 export async function resolveCreditAuthorityRoute(): Promise<CreditAuthorityRuntimeRoute> {
@@ -566,5 +613,152 @@ export async function simulateCreditRollback({
       correlationId: auditEvent.correlationId ?? null,
     },
     simulatedAt,
+  };
+}
+
+export async function promoteCreditAuthority({
+  actor,
+  domain,
+  mode,
+  justification,
+  correlationId,
+}: {
+  actor: AuthenticatedUser;
+  domain: unknown;
+  mode: unknown;
+  justification: unknown;
+  correlationId?: unknown;
+}): Promise<CreditAuthorityPromotion> {
+  if (domain !== "CREDIT") {
+    throw new CreditAuthorityValidationError("Only CREDIT promotion is supported.");
+  }
+
+  if (mode !== "EXECUTE") {
+    throw new CreditAuthorityValidationError("Promotion mode must be EXECUTE.");
+  }
+
+  const normalizedJustification = normalizeJustification(justification);
+  if (!normalizedJustification) {
+    throw new CreditAuthorityValidationError("Justification is required.");
+  }
+
+  const normalizedCorrelationId = normalizeCorrelationId(correlationId);
+  const authorityStatusBefore = getAuthorityStatus().credit;
+  const promotionDecisionBefore = await getPromotionDecision({ domain: "CREDIT" });
+  const promotionApproval = promotionDecisionBefore.approvalState.promotionApproval;
+
+  if (authorityStatusBefore.authority === "SERVICE") {
+    const rollbackReadiness = await validateRollbackReadiness();
+    const metadata = getPromotionMetadata();
+
+    return {
+      domain: "CREDIT",
+      previousAuthority: "SERVICE",
+      newAuthority: "SERVICE",
+      comparisonMode: "ENABLED",
+      rollbackReadiness: rollbackReadiness.credit.rollbackStatus,
+      promotionApprovalId:
+        metadata.promotionApprovalId ?? promotionApproval?.id ?? null,
+      promotedAt: metadata.promotedAt ?? nowIso(),
+      correlationId: normalizedCorrelationId,
+      idempotent: true,
+      auditEvent: null,
+    };
+  }
+
+  const simulation = await simulateCreditPromotion({
+    actorUserId: actor.id,
+    correlationId: normalizedCorrelationId,
+  });
+
+  if (!simulation.promotionAllowed) {
+    throw new CreditAuthorityValidationError(
+      "Credit authority promotion preconditions are not satisfied.",
+      409
+    );
+  }
+
+  if (!promotionApproval) {
+    throw new CreditAuthorityValidationError(
+      "PROMOTION_APPROVAL is required before controlled promotion.",
+      409
+    );
+  }
+
+  const promotedAt = nowIso();
+  setRuntimeAuthorityDomainConfiguration({
+    domain: "CREDIT",
+    authority: "SERVICE",
+    comparisonMode: "ENABLED",
+  });
+  process.env.CREDIT_PROMOTED_AT = promotedAt;
+  process.env.CREDIT_PROMOTION_APPROVAL_ID = promotionApproval.id;
+
+  const auditEvent = await createOutboxEvent({
+    eventType: "authority.credit.promoted",
+    aggregateType: "authority_candidate",
+    aggregateId: "CREDIT",
+    correlationId: normalizedCorrelationId,
+    payload: {
+      domain: "CREDIT",
+      previousAuthority: authorityStatusBefore.authority,
+      newAuthority: "SERVICE",
+      actorUserId: actor.id,
+      promotionApprovalId: promotionApproval.id,
+      justification: normalizedJustification,
+      correlationId: normalizedCorrelationId,
+      promotedAt,
+    },
+  });
+
+  return {
+    domain: "CREDIT",
+    previousAuthority: authorityStatusBefore.authority,
+    newAuthority: "SERVICE",
+    comparisonMode: "ENABLED",
+    rollbackReadiness: simulation.rollbackReadiness,
+    promotionApprovalId: promotionApproval.id,
+    promotedAt,
+    correlationId: normalizedCorrelationId,
+    idempotent: false,
+    auditEvent: {
+      id: auditEvent.id,
+      eventType: auditEvent.eventType,
+      correlationId: auditEvent.correlationId ?? null,
+    },
+  };
+}
+
+export async function getCreditPromotionStatus(): Promise<CreditPromotionStatus> {
+  const [authorityStatus, rollbackReadiness, promotionDecision, eventMetadata] =
+    await Promise.all([
+      Promise.resolve(getAuthorityStatus()),
+      validateRollbackReadiness(),
+      getPromotionDecision({ domain: "CREDIT" }),
+      getLatestPromotionEventMetadata(),
+    ]);
+  const creditAuthority = authorityStatus.credit;
+  const creditRollback = rollbackReadiness.credit;
+  const metadata = getPromotionMetadata();
+
+  return {
+    domain: "CREDIT",
+    authority: creditAuthority.authority,
+    comparisonMode: creditAuthority.comparisonMode,
+    promotedAt:
+      creditAuthority.authority === "SERVICE"
+        ? metadata.promotedAt ??
+          eventMetadata.promotedAt ??
+          promotionDecision.approvalState.promotionApproval?.createdAt ??
+          null
+        : null,
+    rollbackReady: creditRollback.rollbackStatus === "READY",
+    rollbackReadiness: creditRollback.rollbackStatus,
+    promotionApprovalId:
+      metadata.promotionApprovalId ??
+      eventMetadata.promotionApprovalId ??
+      promotionDecision.approvalState.promotionApproval?.id ??
+      null,
+    evaluatedAt: nowIso(),
   };
 }
