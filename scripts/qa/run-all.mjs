@@ -45,6 +45,8 @@ const steps = [
   "qa:credit-post-promotion",
   "qa:credit-post-promotion-activity",
   "qa:credit-certification",
+  "qa:post-extraction-golden-path",
+  "qa:post-extraction-hardening",
   "qa:credit-launch",
   "qa:worker-observability",
 ];
