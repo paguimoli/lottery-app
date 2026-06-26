@@ -176,7 +176,8 @@ if (decisionBefore.decision === "READY_FOR_DRY_RUN_APPROVAL") {
   pass("Credit dry-run approval rejects missing warning acknowledgement.");
 } else {
   assert(
-    decisionBefore.decision === "READY_FOR_PROMOTION_APPROVAL",
+    decisionBefore.decision === "READY_FOR_PROMOTION_APPROVAL" ||
+      decisionBefore.decision === "READY_FOR_CONTROLLED_PROMOTION",
     "Credit decision must be ready for dry-run approval or already approved.",
     { decisionBefore }
   );
@@ -281,8 +282,9 @@ const authorityAfter = authorityAfterResult.body.authority;
 const approvalStatus = statusAfterResult.body.approvalStatus;
 
 assert(
-  decisionAfter.decision === "READY_FOR_PROMOTION_APPROVAL",
-  "Credit decision should advance to READY_FOR_PROMOTION_APPROVAL.",
+  decisionAfter.decision === "READY_FOR_PROMOTION_APPROVAL" ||
+    decisionAfter.decision === "READY_FOR_CONTROLLED_PROMOTION",
+  "Credit decision should be promotion-approval ready or controlled-promotion ready.",
   { decisionBefore, decisionAfter }
 );
 assert(

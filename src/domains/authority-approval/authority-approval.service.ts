@@ -246,14 +246,19 @@ export async function approveAuthorityPromotion({
   promotionDecisionBefore: Awaited<ReturnType<typeof getPromotionDecision>>;
   promotionDecisionAfter: Awaited<ReturnType<typeof getPromotionDecision>>;
 }> {
-  if (domain !== "SETTLEMENT" && domain !== "LEDGER") {
+  if (domain !== "SETTLEMENT" && domain !== "LEDGER" && domain !== "CREDIT") {
     throw new AuthorityApprovalValidationError(
-      "Only SETTLEMENT and LEDGER promotion approval are supported."
+      "Only SETTLEMENT, LEDGER, and CREDIT promotion approval are supported."
     );
   }
 
   const authorityCandidate = domain;
-  const label = authorityCandidate === "LEDGER" ? "Ledger" : "Settlement";
+  const label =
+    authorityCandidate === "CREDIT"
+      ? "Credit"
+      : authorityCandidate === "LEDGER"
+        ? "Ledger"
+        : "Settlement";
   const normalizedCorrelationId = normalizeCorrelationId(correlationId);
   if (normalizedCorrelationId) {
     const existingApproval = await findAuthorityApprovalRecordByCorrelationId({
@@ -344,9 +349,11 @@ export async function approveAuthorityPromotion({
 
   await createOutboxEvent({
     eventType:
-      authorityCandidate === "LEDGER"
-        ? "authority.ledger.promotion.approved"
-        : "authority.promotion.approved",
+      authorityCandidate === "CREDIT"
+        ? "authority.credit.promotion.approved"
+        : authorityCandidate === "LEDGER"
+          ? "authority.ledger.promotion.approved"
+          : "authority.promotion.approved",
     aggregateType: "authority_candidate",
     aggregateId: authorityCandidate,
     correlationId: normalizedCorrelationId,

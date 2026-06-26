@@ -74,21 +74,38 @@ assert(promotion.currentAuthority === "MONOLITH", "Credit promotion simulation m
 assert(promotion.simulatedAuthority === "SERVICE", "Promotion simulation should model SERVICE authority.", {
   promotion,
 });
-assert(promotion.promotionAllowed === false, "Phase 17.0 must not allow promotion yet.", {
-  promotion,
-});
 assert(
-  promotion.blockers.includes("Credit PROMOTION_APPROVAL must exist."),
-  "Promotion simulation should require promotion approval.",
-  { promotion }
+  typeof promotion.promotionAllowed === "boolean",
+  "Promotion simulation should report whether controlled promotion would be allowed.",
+  {
+    promotion,
+  }
 );
-assert(
-  promotion.blockers.includes(
-    "Credit promotion decision must be READY_FOR_CONTROLLED_PROMOTION."
-  ),
-  "Promotion simulation should require controlled-promotion readiness.",
-  { promotion }
-);
+if (promotion.promotionDecision === "READY_FOR_CONTROLLED_PROMOTION") {
+  assert(promotion.promotionAllowed === true, "Credit simulation should allow future controlled promotion after approvals.", {
+    promotion,
+  });
+} else {
+  assert(promotion.promotionAllowed === false, "Credit simulation must not allow promotion before approvals are complete.", {
+    promotion,
+  });
+}
+if (promotion.promotionDecision !== "READY_FOR_CONTROLLED_PROMOTION") {
+  assert(
+    promotion.blockers.includes("Credit PROMOTION_APPROVAL must exist."),
+    "Promotion simulation should require promotion approval.",
+    { promotion }
+  );
+}
+if (promotion.promotionDecision !== "READY_FOR_CONTROLLED_PROMOTION") {
+  assert(
+    promotion.blockers.includes(
+      "Credit promotion decision must be READY_FOR_CONTROLLED_PROMOTION."
+    ),
+    "Promotion simulation should require controlled-promotion readiness.",
+    { promotion }
+  );
+}
 if (promotion.promotionDecision === "READY_FOR_DRY_RUN_APPROVAL") {
   assert(
     promotion.blockers.includes("Credit DRY_RUN_APPROVAL must exist."),

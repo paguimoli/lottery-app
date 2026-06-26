@@ -44,7 +44,8 @@ const dryRun = result.body.dryRunEvaluation;
 assert(dryRun.authorityCandidate === "CREDIT", "Credit dry-run domain mismatch.", { dryRun });
 assert(
   dryRun.currentState === "READY_FOR_DRY_RUN_APPROVAL" ||
-    dryRun.currentState === "READY_FOR_PROMOTION_APPROVAL",
+    dryRun.currentState === "READY_FOR_PROMOTION_APPROVAL" ||
+    dryRun.currentState === "READY_FOR_CONTROLLED_PROMOTION",
   "Credit dry-run state mismatch.",
   { dryRun }
 );

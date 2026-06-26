@@ -50,8 +50,9 @@ assert(decision.comparisonMode === "ENABLED", "Credit comparison must remain ENA
 });
 assert(
   decision.decision === "READY_FOR_DRY_RUN_APPROVAL" ||
-    decision.decision === "READY_FOR_PROMOTION_APPROVAL",
-  "Credit decision should be ready for dry-run approval or promotion approval.",
+    decision.decision === "READY_FOR_PROMOTION_APPROVAL" ||
+    decision.decision === "READY_FOR_CONTROLLED_PROMOTION",
+  "Credit decision should be ready for the next operator step.",
   { decision }
 );
 assert(decision.promotionReadiness.readiness === "READY", "Credit promotion evidence should be READY.", {
