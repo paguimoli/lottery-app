@@ -118,6 +118,34 @@ console.log(`httpAverageImprovementPercent: ${improvementPercent(before.http.ave
 console.log(`databaseAverageMsBefore: ${before.database.averageQueryDurationMs ?? "unavailable"}`);
 console.log(`databaseAverageMsAfter: ${after.database.averageQueryDurationMs ?? "unavailable"}`);
 console.log(`databaseAverageImprovementPercent: ${improvementPercent(before.database.averageQueryDurationMs, after.database.averageQueryDurationMs, "decrease") ?? "unavailable"}`);
+console.log("databaseSummary:");
+console.log(`databaseTelemetryAverageMs: ${after.databasePerformance?.latency?.averageMs ?? "unavailable"}`);
+console.log(`databaseTelemetryMedianMs: ${after.databasePerformance?.latency?.medianMs ?? "unavailable"}`);
+console.log(`databaseTelemetryP95Ms: ${after.databasePerformance?.latency?.p95Ms ?? "unavailable"}`);
+console.log(`databaseTelemetryP99Ms: ${after.databasePerformance?.latency?.p99Ms ?? "unavailable"}`);
+console.log(`databaseTelemetryMaxMs: ${after.databasePerformance?.latency?.maxMs ?? "unavailable"}`);
+console.log(`databaseReadWriteRatio: ${after.databasePerformance?.latency?.readWriteRatio ?? "unavailable"}`);
+console.log("connectionPoolSummary:");
+console.log(`connectionPoolStatus: ${after.databasePerformance?.connections?.status ?? "unavailable"}`);
+console.log(`poolUtilization: ${after.databasePerformance?.connections?.poolUtilization ?? "unavailable"}`);
+console.log(`activeConnections: ${after.databasePerformance?.connections?.activeConnections ?? "unavailable"}`);
+console.log(`waitingConnections: ${after.databasePerformance?.connections?.waitingConnections ?? "unavailable"}`);
+console.log("transactionSummary:");
+console.log(`transactionStatus: ${after.databasePerformance?.transactions?.status ?? "unavailable"}`);
+console.log(`transactionCount: ${after.databasePerformance?.transactions?.transactionCount ?? "unavailable"}`);
+console.log(`averageTransactionMs: ${after.databasePerformance?.transactions?.averageTransactionDurationMs ?? "unavailable"}`);
+console.log("slowQuerySummary:");
+for (const query of after.databasePerformance?.slowQueries?.topSlowQueries?.slice(0, 5) ?? []) {
+  console.log(`- ${query.label} ${query.durationMs ?? "unavailable"}ms ${query.table}`);
+}
+console.log("repositoryHotspots:");
+for (const hotspot of after.databasePerformance?.repositoryHotspots?.slice(0, 5) ?? []) {
+  console.log(`- ${hotspot.rank}. ${hotspot.name} indicators=${hotspot.queryCount}`);
+}
+console.log("apiHotspots:");
+for (const hotspot of after.databasePerformance?.apiHotspots?.slice(0, 5) ?? []) {
+  console.log(`- ${hotspot.rank}. ${hotspot.name} indicators=${hotspot.queryCount}`);
+}
 console.log(`outboxPendingBefore: ${before.throughput.outbox.pending}`);
 console.log(`outboxPendingAfter: ${after.throughput.outbox.pending}`);
 console.log(`outboxPendingDelta: ${pendingDelta ?? "unavailable"}`);

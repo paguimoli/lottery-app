@@ -2,6 +2,7 @@ import os from "node:os";
 import { performance } from "node:perf_hooks";
 
 import { getAuthorityBaselineStatus } from "../authority-baseline/authority-baseline.service";
+import { getDatabasePerformanceReport } from "../database-performance/database-performance.service";
 import { getOperationsMetricsSummary } from "../operations/worker-observability.service";
 import { supabaseServerAdmin } from "@/src/lib/supabase/server-admin-client";
 import type {
@@ -567,12 +568,21 @@ function rankBottlenecks(input: {
 }
 
 export async function getPerformanceBaselineReport(): Promise<PerformanceBaselineReport> {
-  const [authorityBaseline, http, database, throughput, runtime, operationsMetrics] =
+  const [
+    authorityBaseline,
+    http,
+    database,
+    throughput,
+    databasePerformance,
+    runtime,
+    operationsMetrics,
+  ] =
     await Promise.all([
       getAuthorityBaselineStatus(),
       getHttpLatencyProfile(),
       getDatabaseLatencyProfile(),
       getSystemThroughputProfile(),
+      getDatabasePerformanceReport(),
       getRuntimeProfile(),
       getOperationsMetricsSummary(),
     ]);
@@ -585,6 +595,7 @@ export async function getPerformanceBaselineReport(): Promise<PerformanceBaselin
     http,
     database,
     throughput,
+    databasePerformance,
     runtime,
     operationsMetrics,
     bottlenecks,

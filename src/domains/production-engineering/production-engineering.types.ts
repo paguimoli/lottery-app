@@ -1,4 +1,5 @@
 import type { AuthorityBaselineStatus } from "../authority-baseline/authority-baseline.types";
+import type { DatabasePerformanceReport } from "../database-performance/database-performance.types";
 import type { OperationsMetricsSummary } from "../operations/worker-observability.types";
 
 export type MeasurementStatus = "READY" | "WARNING" | "UNAVAILABLE";
@@ -150,6 +151,7 @@ export type PerformanceBaselineReport = {
   http: HttpLatencyProfile;
   database: DatabaseLatencyProfile;
   throughput: SystemThroughputProfile;
+  databasePerformance: DatabasePerformanceReport;
   runtime: RuntimeProfile;
   operationsMetrics: OperationsMetricsSummary;
   bottlenecks: ProductionBottleneck[];

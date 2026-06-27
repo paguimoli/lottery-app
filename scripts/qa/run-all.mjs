@@ -50,6 +50,7 @@ const steps = [
   "qa:evidence-hardening",
   "qa:ledger-remediation-hardening",
   "qa:ledger-remediation-workflow",
+  "qa:database-performance",
   "qa:performance-baseline",
   "qa:credit-launch",
   "qa:worker-observability",
