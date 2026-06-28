@@ -61,6 +61,7 @@ const steps = [
   "qa:settlement-evidence-optimization",
   "qa:performance-validation",
   "qa:resilience-baseline",
+  "qa:idempotency-validation",
   "qa:performance-baseline",
   "qa:credit-launch",
   "qa:worker-observability",

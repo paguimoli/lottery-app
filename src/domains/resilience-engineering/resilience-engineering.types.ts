@@ -11,6 +11,7 @@ import type {
 } from "../operations/worker-observability.types";
 
 export type ResilienceScenarioStatus = "READY" | "WARNING" | "BLOCKED";
+export type RetryValidationScenarioStatus = "VERIFIED" | "WARNING" | "BLOCKED";
 
 export type ResilienceScenario = {
   name: string;
@@ -39,6 +40,79 @@ export type RetryIdempotencyStatus = {
   retryEvidenceCount: number;
   duplicatePrevention: ResilienceDuplicatePrevention;
   warnings: string[];
+  recommendation: string;
+};
+
+export type IdempotencyValidation = {
+  status: ResilienceScenarioStatus;
+  generatedAt: string;
+  readOnly: true;
+  duplicateEvents: number;
+  duplicateTickets: number;
+  duplicateSettlements: number;
+  duplicateLedgerEntries: number;
+  duplicateCreditReservations: number;
+  replayProtectionVerified: boolean;
+  correlationIdsRespected: boolean;
+  idempotencyKeysRespected: boolean;
+  idempotencyKeyEvidenceCount: number;
+  completedIdempotencyKeyCount: number;
+  correlationIdEvidenceCount: number;
+  sampledOutboxEvents: number;
+  sampledTickets: number;
+  sampledSettlements: number;
+  sampledLedgerEntries: number;
+  sampledCreditReservations: number;
+  warnings: string[];
+  blockers: string[];
+  recommendation: string;
+};
+
+export type RetryValidationScenario = {
+  name:
+    | "OUTBOX_DISPATCHER_RESTART"
+    | "RABBITMQ_RECONNECT"
+    | "WORKER_RESTART"
+    | "DUPLICATE_MESSAGE_DELIVERY"
+    | "DISPATCHER_RESTART_DURING_PUBLISH"
+    | "WORKER_RESTART_DURING_PROCESSING"
+    | "MULTIPLE_CONSUMER_RETRY"
+    | "REPLAY_ALREADY_PROCESSED_EVENT"
+    | "DUPLICATE_HTTP_RETRY";
+  status: RetryValidationScenarioStatus;
+  readOnly: true;
+  safe: boolean;
+  evidence: Record<string, unknown>;
+  warnings: string[];
+};
+
+export type RetryValidation = {
+  status: ResilienceScenarioStatus;
+  generatedAt: string;
+  readOnly: true;
+  scenarios: RetryValidationScenario[];
+  idempotencyValidation: IdempotencyValidation;
+  retryIdempotencyStatus: RetryIdempotencyStatus;
+  serviceRecovery: ServiceRecoverySummary;
+  blockers: string[];
+  warnings: string[];
+  recommendation: string;
+};
+
+export type EventReplayStatus = {
+  status: ResilienceScenarioStatus;
+  generatedAt: string;
+  readOnly: true;
+  replayProtectionVerified: boolean;
+  alreadyPublishedEventsSampled: number;
+  duplicatePublishedEvents: number;
+  duplicateOutboxEventIds: number;
+  duplicateCorrelationEventFingerprints: number;
+  idempotencyKeyEvidenceCount: number;
+  completedIdempotencyKeyCount: number;
+  correlationIdEvidenceCount: number;
+  warnings: string[];
+  blockers: string[];
   recommendation: string;
 };
 

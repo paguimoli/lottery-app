@@ -9,11 +9,16 @@ import {
 import { pingRedis } from "@/src/lib/redis/redis.client";
 import { supabaseServerAdmin } from "@/src/lib/supabase/server-admin-client";
 import type {
+  EventReplayStatus,
   FailureRecoveryBaseline,
+  IdempotencyValidation,
   ResilienceDuplicatePrevention,
   ResilienceScenario,
   ResilienceScenarioStatus,
   ResilienceStatus,
+  RetryValidation,
+  RetryValidationScenario,
+  RetryValidationScenarioStatus,
   RetryIdempotencyStatus,
   ServiceRecoverySummary,
 } from "./resilience-engineering.types";
@@ -82,6 +87,33 @@ function duplicateCompositeCount(rows: Row[], keys: string[]) {
   return duplicates.size;
 }
 
+function countDuplicateIds(rows: Row[]) {
+  return duplicateCount(rows, "id");
+}
+
+function countDuplicateNonEmpty(rows: Row[], key: string) {
+  return duplicateCount(rows, key);
+}
+
+function countRowsWithString(rows: Row[], key: string) {
+  return rows.filter((row) => {
+    const value = row[key];
+
+    return typeof value === "string" && value.trim().length > 0;
+  }).length;
+}
+
+function outboxEventFingerprint(row: Row) {
+  return [
+    row.event_type,
+    row.aggregate_type,
+    row.aggregate_id,
+    row.correlation_id,
+  ]
+    .map((value) => (value === null || value === undefined ? "" : String(value)))
+    .join(":");
+}
+
 async function getDuplicatePrevention(): Promise<ResilienceDuplicatePrevention> {
   const [tickets, settlements, ledgerEntries, reservations] = await Promise.all([
     sampleRows("tickets", "id, external_ticket_id, created_at"),
@@ -118,6 +150,392 @@ async function getCorrelationIdEvidenceCount() {
   if (error) return 0;
 
   return count ?? 0;
+}
+
+async function getIdempotencyKeyEvidence() {
+  const rows = await sampleRows(
+    "idempotency_keys",
+    "id, idempotency_key, scope, status, created_at, completed_at",
+    1000
+  );
+
+  return {
+    rows,
+    totalCount: rows.length,
+    completedCount: rows.filter((row) => row.status === "COMPLETED").length,
+    duplicateIdempotencyKeys: countDuplicateNonEmpty(rows, "idempotency_key"),
+  };
+}
+
+async function getIdempotencyValidationEvidence(): Promise<IdempotencyValidation> {
+  const [
+    outboxEvents,
+    tickets,
+    settlements,
+    ledgerEntries,
+    reservations,
+    idempotencyEvidence,
+    correlationIdEvidenceCount,
+  ] = await Promise.all([
+    sampleRows(
+      "outbox_events",
+      "id, event_type, aggregate_type, aggregate_id, correlation_id, status, attempt_count, created_at, published_at",
+      1000
+    ),
+    sampleRows("tickets", "id, external_ticket_id, created_at", 1000),
+    sampleRows(
+      "credit_settlement_applications",
+      "id, reservation_id, ticket_id, settlement_id, idempotency_key, created_at",
+      1000
+    ),
+    sampleRows(
+      "financial_ledger_entries",
+      "id, idempotency_key, reference_type, reference_id, created_at",
+      1000
+    ),
+    sampleRows(
+      "credit_reservations",
+      "id, player_id, ticket_id, idempotency_key, correlation_id, created_at",
+      1000
+    ),
+    getIdempotencyKeyEvidence(),
+    getCorrelationIdEvidenceCount(),
+  ]);
+  const duplicateEvents = countDuplicateIds(outboxEvents);
+  const duplicateTickets = duplicateCount(tickets, "external_ticket_id");
+  const duplicateSettlements = duplicateCompositeCount(settlements, [
+    "reservation_id",
+    "ticket_id",
+    "settlement_id",
+  ]);
+  const duplicateLedgerEntries = countDuplicateIds(ledgerEntries);
+  const duplicateCreditReservations = duplicateCompositeCount(reservations, [
+    "player_id",
+    "ticket_id",
+  ]);
+  const blockers: string[] = [];
+  const warnings: string[] = [];
+  const idempotencyKeyEvidenceCount =
+    idempotencyEvidence.totalCount +
+    countRowsWithString(settlements, "idempotency_key") +
+    countRowsWithString(ledgerEntries, "idempotency_key") +
+    countRowsWithString(reservations, "idempotency_key");
+  const replayProtectionVerified =
+    duplicateEvents === 0 &&
+    duplicateTickets === 0 &&
+    duplicateSettlements === 0 &&
+    duplicateLedgerEntries === 0 &&
+    duplicateCreditReservations === 0;
+  const correlationIdsRespected = correlationIdEvidenceCount > 0;
+  const idempotencyKeysRespected =
+    idempotencyKeyEvidenceCount > 0 &&
+    idempotencyEvidence.duplicateIdempotencyKeys === 0;
+
+  if (duplicateEvents > 0) blockers.push("Duplicate outbox event identifiers were observed.");
+  if (duplicateTickets > 0) blockers.push("Duplicate ticket identifiers were observed.");
+  if (duplicateSettlements > 0) blockers.push("Duplicate settlement applications were observed.");
+  if (duplicateLedgerEntries > 0) blockers.push("Duplicate ledger entries were observed.");
+  if (duplicateCreditReservations > 0) {
+    blockers.push("Duplicate credit reservations were observed.");
+  }
+  if (idempotencyEvidence.duplicateIdempotencyKeys > 0) {
+    blockers.push("Duplicate idempotency keys were observed.");
+  }
+  if (!correlationIdsRespected) {
+    warnings.push("No correlation ID evidence was visible in sampled outbox events.");
+  }
+  if (idempotencyKeyEvidenceCount === 0) {
+    warnings.push("No idempotency key evidence was visible in sampled data.");
+  }
+
+  const status =
+    blockers.length > 0 ? "BLOCKED" : warnings.length > 0 ? "WARNING" : "READY";
+
+  return {
+    status,
+    generatedAt: nowIso(),
+    readOnly: true,
+    duplicateEvents,
+    duplicateTickets,
+    duplicateSettlements,
+    duplicateLedgerEntries,
+    duplicateCreditReservations,
+    replayProtectionVerified,
+    correlationIdsRespected,
+    idempotencyKeysRespected,
+    idempotencyKeyEvidenceCount,
+    completedIdempotencyKeyCount: idempotencyEvidence.completedCount,
+    correlationIdEvidenceCount,
+    sampledOutboxEvents: outboxEvents.length,
+    sampledTickets: tickets.length,
+    sampledSettlements: settlements.length,
+    sampledLedgerEntries: ledgerEntries.length,
+    sampledCreditReservations: reservations.length,
+    warnings,
+    blockers,
+    recommendation:
+      status === "BLOCKED"
+        ? "Stop retry validation and investigate duplicate evidence."
+        : "Retry and replay evidence is safe for current validation scope.",
+  };
+}
+
+function scenarioStatus(
+  safe: boolean,
+  warnings: string[] = []
+): RetryValidationScenarioStatus {
+  if (!safe) return "BLOCKED";
+  if (warnings.length > 0) return "WARNING";
+
+  return "VERIFIED";
+}
+
+function retryScenario(input: {
+  name: RetryValidationScenario["name"];
+  safe: boolean;
+  evidence: Record<string, unknown>;
+  warnings?: string[];
+}): RetryValidationScenario {
+  const warnings = input.warnings ?? [];
+
+  return {
+    name: input.name,
+    status: scenarioStatus(input.safe, warnings),
+    readOnly: true,
+    safe: input.safe,
+    evidence: input.evidence,
+    warnings,
+  };
+}
+
+export async function getIdempotencyValidation(): Promise<IdempotencyValidation> {
+  return getIdempotencyValidationEvidence();
+}
+
+export async function getEventReplayStatus(): Promise<EventReplayStatus> {
+  const [
+    idempotencyValidation,
+    publishedEvents,
+    idempotencyEvidence,
+    correlationIdEvidenceCount,
+  ] = await Promise.all([
+    getIdempotencyValidationEvidence(),
+    sampleRows(
+      "outbox_events",
+      "id, event_type, aggregate_type, aggregate_id, correlation_id, status, published_at, created_at",
+      1000
+    ),
+    getIdempotencyKeyEvidence(),
+    getCorrelationIdEvidenceCount(),
+  ]);
+  const published = publishedEvents.filter((event) => event.status === "PUBLISHED");
+  const duplicatePublishedEvents = countDuplicateIds(published);
+  const duplicateOutboxEventIds = countDuplicateIds(publishedEvents);
+  const fingerprints = new Set<string>();
+  const duplicateFingerprints = new Set<string>();
+
+  for (const event of published) {
+    const fingerprint = outboxEventFingerprint(event);
+    if (!fingerprint.trim()) continue;
+    if (fingerprints.has(fingerprint)) duplicateFingerprints.add(fingerprint);
+    fingerprints.add(fingerprint);
+  }
+
+  const blockers: string[] = [];
+  const warnings: string[] = [...idempotencyValidation.warnings];
+
+  if (duplicatePublishedEvents > 0) blockers.push("Duplicate published event IDs were observed.");
+  if (duplicateOutboxEventIds > 0) blockers.push("Duplicate outbox event IDs were observed.");
+  if (!idempotencyValidation.replayProtectionVerified) {
+    blockers.push("Replay protection failed duplicate-prevention checks.");
+  }
+  if (duplicateFingerprints.size > 0) {
+    warnings.push("Repeated event fingerprints are present and should be reviewed as advisory evidence.");
+  }
+
+  const status =
+    blockers.length > 0 ? "BLOCKED" : warnings.length > 0 ? "WARNING" : "READY";
+
+  return {
+    status,
+    generatedAt: nowIso(),
+    readOnly: true,
+    replayProtectionVerified: blockers.length === 0,
+    alreadyPublishedEventsSampled: published.length,
+    duplicatePublishedEvents,
+    duplicateOutboxEventIds,
+    duplicateCorrelationEventFingerprints: duplicateFingerprints.size,
+    idempotencyKeyEvidenceCount: idempotencyValidation.idempotencyKeyEvidenceCount,
+    completedIdempotencyKeyCount: idempotencyEvidence.completedCount,
+    correlationIdEvidenceCount,
+    warnings: [...new Set(warnings)],
+    blockers,
+    recommendation:
+      blockers.length > 0
+        ? "Investigate replay blockers before continuing."
+        : "Replay protection evidence is safe for current validation scope.",
+  };
+}
+
+export async function getRetryValidation(): Promise<RetryValidation> {
+  const [
+    idempotencyValidation,
+    retryIdempotencyStatus,
+    serviceRecovery,
+    eventReplay,
+  ] = await Promise.all([
+    getIdempotencyValidationEvidence(),
+    getRetryIdempotencyStatus(),
+    getServiceRecoverySummary(),
+    getEventReplayStatus(),
+  ]);
+  const dispatcherObserved = serviceRecovery.workers.workerDetails.some((worker) =>
+    worker.workerName.includes("outbox")
+  );
+  const freshWorkerObserved = serviceRecovery.workers.freshHeartbeats.length > 0;
+  const rabbitVisible = serviceRecovery.rabbitmq.some((queue) => queue.available);
+  const consumerCount = serviceRecovery.rabbitmq.reduce(
+    (sum, queue) => sum + (queue.consumerCount ?? 0),
+    0
+  );
+  const queueDepth = serviceRecovery.rabbitmq.reduce(
+    (sum, queue) => sum + (queue.queueDepth ?? 0),
+    0
+  );
+  const outboxSafe =
+    serviceRecovery.outbox.deadLetterCount === 0 &&
+    serviceRecovery.outbox.failedCount === 0 &&
+    idempotencyValidation.replayProtectionVerified;
+  const retrySafe =
+    outboxSafe &&
+    idempotencyValidation.idempotencyKeysRespected &&
+    idempotencyValidation.correlationIdsRespected;
+  const scenarios: RetryValidationScenario[] = [
+    retryScenario({
+      name: "OUTBOX_DISPATCHER_RESTART",
+      safe: dispatcherObserved && outboxSafe,
+      evidence: {
+        dispatcherObserved,
+        pendingCount: serviceRecovery.outbox.pendingCount,
+        failedCount: serviceRecovery.outbox.failedCount,
+        deadLetterCount: serviceRecovery.outbox.deadLetterCount,
+        duplicateEvents: idempotencyValidation.duplicateEvents,
+      },
+      warnings: dispatcherObserved ? [] : ["Outbox dispatcher heartbeat was not visible."],
+    }),
+    retryScenario({
+      name: "RABBITMQ_RECONNECT",
+      safe: rabbitVisible && retrySafe,
+      evidence: {
+        rabbitVisible,
+        queueCount: serviceRecovery.rabbitmq.length,
+        consumerCount,
+        queueDepth,
+      },
+      warnings: rabbitVisible ? [] : ["RabbitMQ management metrics were unavailable."],
+    }),
+    retryScenario({
+      name: "WORKER_RESTART",
+      safe: freshWorkerObserved && retrySafe,
+      evidence: {
+        freshHeartbeatCount: serviceRecovery.workers.freshHeartbeats.length,
+        staleWorkerCount: serviceRecovery.workers.staleWorkers.length,
+        processedJobs: serviceRecovery.workers.processedJobs,
+      },
+      warnings:
+        serviceRecovery.workers.staleWorkers.length > 0
+          ? ["Stale worker heartbeat evidence is present but separated from active workers."]
+          : [],
+    }),
+    retryScenario({
+      name: "DUPLICATE_MESSAGE_DELIVERY",
+      safe: retrySafe,
+      evidence: idempotencyValidation,
+    }),
+    retryScenario({
+      name: "DISPATCHER_RESTART_DURING_PUBLISH",
+      safe: dispatcherObserved && eventReplay.replayProtectionVerified && outboxSafe,
+      evidence: {
+        dispatcherObserved,
+        publishedEventsSampled: eventReplay.alreadyPublishedEventsSampled,
+        duplicatePublishedEvents: eventReplay.duplicatePublishedEvents,
+        duplicateOutboxEventIds: eventReplay.duplicateOutboxEventIds,
+      },
+    }),
+    retryScenario({
+      name: "WORKER_RESTART_DURING_PROCESSING",
+      safe: freshWorkerObserved && retrySafe,
+      evidence: {
+        freshHeartbeatCount: serviceRecovery.workers.freshHeartbeats.length,
+        recentFailureCount: serviceRecovery.workers.recentFailures.length,
+        duplicatePrevention: idempotencyValidation,
+      },
+    }),
+    retryScenario({
+      name: "MULTIPLE_CONSUMER_RETRY",
+      safe: consumerCount > 0 && retrySafe,
+      evidence: {
+        consumerCount,
+        queueDepth,
+        queueCount: serviceRecovery.rabbitmq.length,
+      },
+      warnings: consumerCount > 0 ? [] : ["No RabbitMQ consumers were visible."],
+    }),
+    retryScenario({
+      name: "REPLAY_ALREADY_PROCESSED_EVENT",
+      safe: eventReplay.replayProtectionVerified && retrySafe,
+      evidence: eventReplay,
+      warnings: eventReplay.warnings,
+    }),
+    retryScenario({
+      name: "DUPLICATE_HTTP_RETRY",
+      safe: retrySafe,
+      evidence: {
+        idempotencyKeyEvidenceCount: idempotencyValidation.idempotencyKeyEvidenceCount,
+        completedIdempotencyKeyCount:
+          idempotencyValidation.completedIdempotencyKeyCount,
+        duplicateTickets: idempotencyValidation.duplicateTickets,
+        duplicateCreditReservations: idempotencyValidation.duplicateCreditReservations,
+        duplicateSettlements: idempotencyValidation.duplicateSettlements,
+      },
+    }),
+  ];
+  const blockers = [
+    ...idempotencyValidation.blockers,
+    ...eventReplay.blockers,
+    ...scenarios
+      .filter((item) => item.status === "BLOCKED")
+      .map((item) => `${item.name} retry safety is blocked.`),
+  ];
+  const warnings = [
+    ...retryIdempotencyStatus.warnings,
+    ...serviceRecovery.warnings,
+    ...idempotencyValidation.warnings,
+    ...eventReplay.warnings,
+    ...scenarios.flatMap((item) => item.warnings),
+  ];
+  const status =
+    blockers.length > 0
+      ? "BLOCKED"
+      : scenarios.some((item) => item.status === "WARNING")
+        ? "WARNING"
+        : "READY";
+
+  return {
+    status,
+    generatedAt: nowIso(),
+    readOnly: true,
+    scenarios,
+    idempotencyValidation,
+    retryIdempotencyStatus,
+    serviceRecovery,
+    blockers: [...new Set(blockers)],
+    warnings: [...new Set(warnings)],
+    recommendation:
+      blockers.length > 0
+        ? "Resolve retry/idempotency blockers before continuing."
+        : "Retry, restart, and replay safety evidence is ready for current validation scope.",
+  };
 }
 
 export async function getRetryIdempotencyStatus(): Promise<RetryIdempotencyStatus> {
