@@ -116,6 +116,84 @@ export type EventReplayStatus = {
   recommendation: string;
 };
 
+export type FaultInjectionDrill =
+  | "RESTART_OUTBOX_DISPATCHER"
+  | "RESTART_WORKER"
+  | "RESTART_RABBITMQ_CONSUMER"
+  | "RABBITMQ_DISCONNECT_RECONNECT"
+  | "REDIS_DISCONNECT_RECONNECT"
+  | "RESTART_APPLICATION"
+  | "INTERRUPT_WORKER_DURING_MESSAGE"
+  | "DUPLICATE_RABBITMQ_DELIVERY";
+
+export type FaultInjectionStatus = {
+  status: ResilienceScenarioStatus;
+  generatedAt: string;
+  supportedDrills: FaultInjectionDrill[];
+  readyForFaultInjection: boolean;
+  authority: ResilienceStatus["authority"];
+  certification: ResilienceStatus["certification"];
+  comparison: ResilienceStatus["comparison"];
+  rollback: ResilienceStatus["rollback"];
+  queueDepth: number;
+  workerCount: number;
+  freshWorkerCount: number;
+  dispatcherHeartbeatVisible: boolean;
+  rabbitmqVisible: boolean;
+  redisVisible: boolean;
+  outboxPendingCount: number;
+  outboxPublishedCount: number;
+  duplicatePrevention: IdempotencyValidation;
+  blockers: string[];
+  warnings: string[];
+  recommendation: string;
+};
+
+export type FaultRecoveryMetrics = {
+  status: ResilienceScenarioStatus;
+  generatedAt: string;
+  recoveryWindowStartedAt: string;
+  recoveryWindowEndedAt: string;
+  estimatedRecoveryTimeMs: number;
+  serviceRecovery: ServiceRecoverySummary;
+  retryValidation: RetryValidation;
+  idempotencyValidation: IdempotencyValidation;
+  eventReplayStatus: EventReplayStatus;
+  financialCounts: {
+    tickets: number;
+    reservations: number;
+    settlements: number;
+    ledgerEntries: number;
+    wallets: number;
+    outboxEvents: number;
+  };
+  duplicateDetection: {
+    duplicateEvents: number;
+    duplicateTickets: number;
+    duplicateSettlements: number;
+    duplicateLedgerEntries: number;
+    duplicateCreditReservations: number;
+  };
+  replayProtectionMaintained: boolean;
+  financialIntegrityVerified: boolean;
+  warnings: string[];
+  blockers: string[];
+  recommendation: string;
+};
+
+export type FaultInjectionSimulation = {
+  drill: FaultInjectionDrill;
+  status: ResilienceScenarioStatus;
+  accepted: boolean;
+  simulatedAt: string;
+  explicitConfirmation: true;
+  precheckStatus: FaultInjectionStatus;
+  recoveryMetrics: FaultRecoveryMetrics;
+  warnings: string[];
+  blockers: string[];
+  recommendation: string;
+};
+
 export type ServiceRecoverySummary = {
   status: ResilienceScenarioStatus;
   generatedAt: string;

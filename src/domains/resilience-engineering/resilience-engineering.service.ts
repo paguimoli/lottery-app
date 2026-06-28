@@ -10,6 +10,10 @@ import { pingRedis } from "@/src/lib/redis/redis.client";
 import { supabaseServerAdmin } from "@/src/lib/supabase/server-admin-client";
 import type {
   EventReplayStatus,
+  FaultInjectionDrill,
+  FaultInjectionSimulation,
+  FaultInjectionStatus,
+  FaultRecoveryMetrics,
   FailureRecoveryBaseline,
   IdempotencyValidation,
   ResilienceDuplicatePrevention,
@@ -29,6 +33,17 @@ function nowIso() {
   return new Date().toISOString();
 }
 
+export const SUPPORTED_FAULT_INJECTION_DRILLS: FaultInjectionDrill[] = [
+  "RESTART_OUTBOX_DISPATCHER",
+  "RESTART_WORKER",
+  "RESTART_RABBITMQ_CONSUMER",
+  "RABBITMQ_DISCONNECT_RECONNECT",
+  "REDIS_DISCONNECT_RECONNECT",
+  "RESTART_APPLICATION",
+  "INTERRUPT_WORKER_DURING_MESSAGE",
+  "DUPLICATE_RABBITMQ_DELIVERY",
+];
+
 function maxStatus(statuses: ResilienceScenarioStatus[]): ResilienceScenarioStatus {
   if (statuses.includes("BLOCKED")) return "BLOCKED";
   if (statuses.includes("WARNING")) return "WARNING";
@@ -44,6 +59,27 @@ async function countRows(table: string) {
   if (error) return { count: 0, error: error.message };
 
   return { count: count ?? 0, error: null };
+}
+
+async function getFinancialCounts() {
+  const [tickets, reservations, settlements, ledgerEntries, wallets, outboxEvents] =
+    await Promise.all([
+      countRows("tickets"),
+      countRows("credit_reservations"),
+      countRows("credit_settlement_applications"),
+      countRows("financial_ledger_entries"),
+      countRows("financial_wallets"),
+      countRows("outbox_events"),
+    ]);
+
+  return {
+    tickets: tickets.count,
+    reservations: reservations.count,
+    settlements: settlements.count,
+    ledgerEntries: ledgerEntries.count,
+    wallets: wallets.count,
+    outboxEvents: outboxEvents.count,
+  };
 }
 
 async function sampleRows(table: string, select: string, limit = 1000) {
@@ -535,6 +571,171 @@ export async function getRetryValidation(): Promise<RetryValidation> {
       blockers.length > 0
         ? "Resolve retry/idempotency blockers before continuing."
         : "Retry, restart, and replay safety evidence is ready for current validation scope.",
+  };
+}
+
+export async function getFaultInjectionStatus(): Promise<FaultInjectionStatus> {
+  const [resilienceStatus, serviceRecovery, idempotencyValidation] =
+    await Promise.all([
+      getResilienceStatus(),
+      getServiceRecoverySummary(),
+      getIdempotencyValidationEvidence(),
+    ]);
+  const queueDepth = serviceRecovery.rabbitmq.reduce(
+    (sum, queue) => sum + (queue.queueDepth ?? 0),
+    0
+  );
+  const blockers = [
+    ...resilienceStatus.blockers,
+    ...idempotencyValidation.blockers,
+  ];
+  const warnings = [
+    ...resilienceStatus.warnings,
+    ...serviceRecovery.warnings,
+    ...idempotencyValidation.warnings,
+  ];
+  const readyForFaultInjection =
+    blockers.length === 0 &&
+    resilienceStatus.rollback.overall === "READY" &&
+    idempotencyValidation.replayProtectionVerified;
+  const status =
+    blockers.length > 0 ? "BLOCKED" : warnings.length > 0 ? "WARNING" : "READY";
+
+  return {
+    status,
+    generatedAt: nowIso(),
+    supportedDrills: SUPPORTED_FAULT_INJECTION_DRILLS,
+    readyForFaultInjection,
+    authority: resilienceStatus.authority,
+    certification: resilienceStatus.certification,
+    comparison: resilienceStatus.comparison,
+    rollback: resilienceStatus.rollback,
+    queueDepth,
+    workerCount: serviceRecovery.workers.heartbeats.length,
+    freshWorkerCount: serviceRecovery.workers.freshHeartbeats.length,
+    dispatcherHeartbeatVisible: serviceRecovery.workers.workerDetails.some((worker) =>
+      worker.workerName.includes("outbox")
+    ),
+    rabbitmqVisible: serviceRecovery.rabbitmq.some((queue) => queue.available),
+    redisVisible: serviceRecovery.redisHealth.available,
+    outboxPendingCount: serviceRecovery.outbox.pendingCount,
+    outboxPublishedCount: serviceRecovery.outbox.publishedCount,
+    duplicatePrevention: idempotencyValidation,
+    blockers: [...new Set(blockers)],
+    warnings: [...new Set(warnings)],
+    recommendation: readyForFaultInjection
+      ? "Controlled fault-injection drills may proceed with external operator orchestration."
+      : "Resolve blockers before executing controlled fault-injection drills.",
+  };
+}
+
+export async function getFaultRecoveryMetrics(): Promise<FaultRecoveryMetrics> {
+  const recoveryWindowStartedAt = nowIso();
+  const [
+    serviceRecovery,
+    retryValidation,
+    idempotencyValidation,
+    eventReplayStatus,
+    financialCounts,
+  ] = await Promise.all([
+    getServiceRecoverySummary(),
+    getRetryValidation(),
+    getIdempotencyValidationEvidence(),
+    getEventReplayStatus(),
+    getFinancialCounts(),
+  ]);
+  const recoveryWindowEndedAt = nowIso();
+  const duplicateDetection = {
+    duplicateEvents: idempotencyValidation.duplicateEvents,
+    duplicateTickets: idempotencyValidation.duplicateTickets,
+    duplicateSettlements: idempotencyValidation.duplicateSettlements,
+    duplicateLedgerEntries: idempotencyValidation.duplicateLedgerEntries,
+    duplicateCreditReservations: idempotencyValidation.duplicateCreditReservations,
+  };
+  const blockers = [
+    ...retryValidation.blockers,
+    ...idempotencyValidation.blockers,
+    ...eventReplayStatus.blockers,
+  ];
+  const warnings = [
+    ...serviceRecovery.warnings,
+    ...retryValidation.warnings,
+    ...idempotencyValidation.warnings,
+    ...eventReplayStatus.warnings,
+  ];
+  const noDuplicates = Object.values(duplicateDetection).every((count) => count === 0);
+  const replayProtectionMaintained =
+    idempotencyValidation.replayProtectionVerified &&
+    eventReplayStatus.replayProtectionVerified;
+  const financialIntegrityVerified =
+    noDuplicates && replayProtectionMaintained && blockers.length === 0;
+  const status =
+    blockers.length > 0 ? "BLOCKED" : warnings.length > 0 ? "WARNING" : "READY";
+
+  return {
+    status,
+    generatedAt: recoveryWindowEndedAt,
+    recoveryWindowStartedAt,
+    recoveryWindowEndedAt,
+    estimatedRecoveryTimeMs: Math.max(
+      0,
+      new Date(recoveryWindowEndedAt).getTime() -
+        new Date(recoveryWindowStartedAt).getTime()
+    ),
+    serviceRecovery,
+    retryValidation,
+    idempotencyValidation,
+    eventReplayStatus,
+    financialCounts,
+    duplicateDetection,
+    replayProtectionMaintained,
+    financialIntegrityVerified,
+    warnings: [...new Set(warnings)],
+    blockers: [...new Set(blockers)],
+    recommendation: financialIntegrityVerified
+      ? "Fault recovery evidence is safe for current validation scope."
+      : "Review fault recovery blockers before continuing.",
+  };
+}
+
+export async function simulateFaultInjection(
+  input: { drill: string; confirmed: boolean }
+): Promise<FaultInjectionSimulation> {
+  if (!input.confirmed) {
+    throw new Error("Fault injection simulation requires explicit confirmation.");
+  }
+
+  if (!SUPPORTED_FAULT_INJECTION_DRILLS.includes(input.drill as FaultInjectionDrill)) {
+    throw new Error("Unsupported fault injection drill.");
+  }
+
+  const drill = input.drill as FaultInjectionDrill;
+  const [precheckStatus, recoveryMetrics] = await Promise.all([
+    getFaultInjectionStatus(),
+    getFaultRecoveryMetrics(),
+  ]);
+  const blockers = [...precheckStatus.blockers, ...recoveryMetrics.blockers];
+  const warnings = [...precheckStatus.warnings, ...recoveryMetrics.warnings];
+  const accepted =
+    blockers.length === 0 &&
+    precheckStatus.readyForFaultInjection &&
+    recoveryMetrics.financialIntegrityVerified;
+  const status =
+    blockers.length > 0 ? "BLOCKED" : warnings.length > 0 ? "WARNING" : "READY";
+
+  return {
+    drill,
+    status,
+    accepted,
+    simulatedAt: nowIso(),
+    explicitConfirmation: true,
+    precheckStatus,
+    recoveryMetrics,
+    warnings: [...new Set(warnings)],
+    blockers: [...new Set(blockers)],
+    recommendation: accepted
+      ? "Simulation accepted; execute the matching Docker-level drill through the operations script."
+      : "Resolve blockers before executing this drill.",
   };
 }
 

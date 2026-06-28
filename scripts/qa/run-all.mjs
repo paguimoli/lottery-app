@@ -62,6 +62,8 @@ const steps = [
   "qa:performance-validation",
   "qa:resilience-baseline",
   "qa:idempotency-validation",
+  "qa:fault-injection",
+  "qa:security-hardening",
   "qa:performance-baseline",
   "qa:credit-launch",
   "qa:worker-observability",
