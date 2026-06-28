@@ -59,6 +59,7 @@ const steps = [
   "qa:concurrency-bottleneck-identification",
   "qa:ticket-evidence-optimization",
   "qa:settlement-evidence-optimization",
+  "qa:performance-validation",
   "qa:performance-baseline",
   "qa:credit-launch",
   "qa:worker-observability",
